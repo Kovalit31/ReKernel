@@ -17,6 +17,12 @@ while [ -L "$SOURCE" ]; do # resolve $SOURCE until the file is no longer a symli
 done
 DIR=$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )
 
+shexit() {
+    echo $1
+    cd $CURPWD
+    exit 1
+}
+
 # Check availability of commands
 WGET=true
 command -v wget > /dev/null 2>&1 || {
@@ -29,16 +35,19 @@ command -v rustup >/dev/null 2>&1 || {
         echo "I will install rustup after 5 seconds..."
         INSTALL=true
     else
-        echo "No rustup and wget found. Abort!"; exit 1
+        shexit "No rustup and wget found. Abort!"
     fi
 }
 
 if $INSTALL; then
-    wget -O- http://sh.rustup.rs | sh - -y --profile minimal || (echo "Error occured. Abort."; exit 1)
+    wget -O- http://sh.rustup.rs | sh - -y --profile minimal || shexit "Error occured. Abort."
 fi
 
 # Set toolchains default profile
 rustup set profile default
+
+cd $DIR
+cp configs/$ARCH.toml config.toml || shexit "Arch not detected. Abort"
 
 # Adding components
 install_components() {
@@ -50,7 +59,6 @@ if [ $ARCH = "x86_64" ]; then
     rustup toolchain install nightly$VERSION-x86_64-unknown-linux-gnu
     rustup default nightly$VERSION-x86_64-unknown-linux-gnu
     install_components
-    cd $DIR
-    cargo build --target configs/x86_64-kernel.json
+    cargo build
     cargo bootimage    
 fi
