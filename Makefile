@@ -27,4 +27,6 @@ build:
 	cargo bootloader
 
 PHONY += all
-all: check, install_deps, build
+all: check install_deps build
+
+.PHONY = $(PHONY)
