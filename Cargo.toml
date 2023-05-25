@@ -14,11 +14,9 @@ panic = "abort"
 [profile.release]
 panic = "abort"
 
-[build]
-rustflags = ["-C", "link-arg=-nostartfiles,-Wl,--allow-multiple-definition"]
-
 [unstable]
 build-std-features = ["compiler-builtins-mem"]
+rustflags = ["-C", "link-arg=-nostartfiles,-Wl,--allow-multiple-definition"]
 build-std = ["core", "compiler_builtins"]
 
 # [target.'cfg(target_os = "linux")']
