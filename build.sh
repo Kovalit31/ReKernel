@@ -51,6 +51,6 @@ if [ $ARCH = "x86_64" ]; then
     rustup default nightly$VERSION-x86_64-unknown-linux-gnu
     install_components
     cd $DIR
-    cargo xbuild --target configs/x86_64-kernel.json
+    cargo build --target configs/x86_64-kernel.json
     cargo bootimage    
 fi
