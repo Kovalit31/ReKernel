@@ -5,7 +5,7 @@ ARCH ?= $(shell uname -m | sed -e s/i.86/x86/ -e s/x86_64/x86/ \
 				  -e s/ppc.*/powerpc/ -e s/mips.*/mips/ \
 				  -e s/sh[234].*/sh/ -e s/aarch64.*/arm64/ )
 DIR := $(strip $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST)))))
-REQUIRED_BINS := rustup, cargo
+REQUIRED_BINS := rustup cargo
 
 check:
 	$(foreach bin,$(REQUIRED_BINS),\
