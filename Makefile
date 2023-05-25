@@ -7,15 +7,18 @@ ARCH ?= $(shell uname -m | sed -e s/i.86/x86/ -e s/x86_64/x86/ \
 DIR := $(strip $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST)))))
 REQUIRED_BINS := rustup cargo
 
+PHONY += check
 check:
 	$(foreach bin,$(REQUIRED_BINS),\
 		$(if $(shell command -v $(bin) 2> /dev/null),$(info configure: Found `$(bin)`),$(error Error: please install `$(bin)`)))
 
+PHONY += install_deps
 install_deps:
 	rustup component add rust-std llvm-tools-preview
 	cargo install cargo-xbuild
 	cargo install bootloader
 
+PHONY += build
 build:
 	cd $(DIR)
 	ifeq ($(ARCH), x86_64)
@@ -23,4 +26,5 @@ build:
 	endif
 	cargo bootloader
 
+PHONY += all
 all: check, install_deps, build
