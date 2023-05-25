@@ -7,7 +7,7 @@ ARCH=$(uname -m | sed -e s/i.86/x86/ -e s/x86_64/x86_64/ \
 				  -e s/ppc.*/powerpc/ -e s/mips.*/mips/ \
 				  -e s/sh[234].*/sh/ -e s/aarch64.*/arm64/)
 
-VERSION="-2020-04-07"
+VERSION=""
 CURPWD=$(pwd)
 SOURCE=${BASH_SOURCE[0]}
 while [ -L "$SOURCE" ]; do # resolve $SOURCE until the file is no longer a symlink
