@@ -34,7 +34,7 @@ command -v rustup >/dev/null 2>&1 || {
 }
 
 if $INSTALL; then
-    [ wget -O- http://sh.rustup.rs | sh - -y --profile minimal ] || echo "Error occured. Abort."; exit 1
+    wget -O- http://sh.rustup.rs | sh - -y --profile minimal || (echo "Error occured. Abort."; exit 1)
 fi
 
 # Set toolchains default profile
