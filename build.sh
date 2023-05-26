@@ -17,10 +17,10 @@ warning() {
 check_cmd() {
     if [ -z ${1+x} ]; then 
         warning "\$1 is unsetted! Can't check command"
-        return true
+        return 0
     fi
-    command -v $1 >/dev/null 2>&1m || return false
-    return true
+    command -v $1 >/dev/null 2>&1m || return 1
+    return 0
 }
 
 install_rust() {
@@ -65,7 +65,7 @@ fi
 
 CURPWD=$(pwd)
 
-## STACKOVERFLOW
+## STACKOVERFLOWитт
 SOURCE=${BASH_SOURCE[0]}
 while [ -L "$SOURCE" ]; do # resolve $SOURCE until the file is no longer a symlink
   DIR=$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )
@@ -75,7 +75,7 @@ done
 DIR=$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )
 ## END
 
-if [ -n $1 ]; then
+if [ ! -z ${1+x} ]; then
     sleep 1
     exit 1
 fi
