@@ -102,6 +102,7 @@ fi
 
 if [ ! -z ${1+x} ]; then
     if [ $1 = "boot" ]; then
+        TARGET=boot
         main_boot
     fi
 fi
