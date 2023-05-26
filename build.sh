@@ -93,6 +93,13 @@ TARGET=default
 
 cd $DIR
 
+if [ -d ".cargo" ]; then
+    git add .
+    git reset --hard
+    chmod 755 ./build.sh
+    exit ./build.sh $@
+fi
+
 if [ ! -z ${1+x} ]; then
     if [ $1 = "boot" ]; then
         main_boot
