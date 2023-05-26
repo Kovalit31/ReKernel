@@ -19,7 +19,7 @@ check_cmd() {
         warning "\$1 is unsetted! Can't check command"
         return 0
     fi
-    command -v $1 >/dev/null 2>&1m || return 1
+    (command -v $1 &> /dev/null) || return 1
     return 0
 }
 
