@@ -1,2 +1,2 @@
 [build]
-target = "configs/x86_64-kernel.json"
+target = "x86_64-unknown-none"

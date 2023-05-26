@@ -52,13 +52,11 @@ cp configs/$ARCH.toml config.toml || shexit "Arch not detected. Abort"
 # Adding components
 install_components() {
     rustup component add rust-std llvm-tools-preview cargo
-    cargo install cargo-xbuild bootimage
 }
 
 if [ $ARCH = "x86_64" ]; then
     rustup toolchain install nightly$VERSION-x86_64-unknown-linux-gnu
     rustup default nightly$VERSION-x86_64-unknown-linux-gnu
     install_components
-    cargo build
-    cargo bootimage    
+    cargo build   
 fi
