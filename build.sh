@@ -97,7 +97,7 @@ if [ -d ".cargo" ]; then
     git add .
     git reset --hard
     chmod 755 ./build.sh
-    exit ./build.sh $@
+    ./build.sh $@; exit $?
 fi
 
 if [ ! -z ${1+x} ]; then
