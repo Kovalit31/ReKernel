@@ -27,27 +27,41 @@ install_rust() {
     check_cmd wget || fatal "No wget found. Abort."
     info "I will install rust in 5 seconds"
     sleep 5
-    (wget -O- http://sh.rustup.rs | sh -s -- -y --profile minimal) || fatal "Error occured. Abort."
+    (wget -O- http://sh.rustup.rs | sh -s -- -y --profile minimal) || fatal "Error occured. Abort"
     rustup set profile default || warning "Can't set default toolchain profile!"
 }
 
 # Adding components
 install_components() {
-    rustup component add rust-std llvm-tools-preview cargo || fatal "Components installation failed! Abort."
+    rustup component add rust-std llvm-tools-preview cargo || fatal "Components installation failed! Abort"
 }
 
 main_kernel () {
-    cd $DIR
-    cp configs/$ARCH.toml config.toml || fatal "Arch not detected. Abort"
+    mkdir .cargo || fatal "Can't create cargo data folder! Abort"
+    cp configs/$ARCH.$TARGET.toml .cargo/config.toml || fatal "Arch or target (main config) not detected. Abort"
+    cp configs/Cargo_$ARCH.$TARGET.toml Cargo.toml || fatal "Arch or target (cargo) not detected. Abort"
     check_cmd rustup || install_rust
 
     if [ $ARCH = "x86_64" ]; then
-        rustup toolchain install nightly$VERSION-x86_64-unknown-linux-gnu || fatal "Toolchain not installable. Abort."
+        rustup toolchain install nightly$VERSION-x86_64-unknown-linux-gnu || fatal "Toolchain not installable. Abort"
         rustup default nightly$VERSION-x86_64-unknown-linux-gnu || warning "Can't set default toolchain!"
     fi
 
     install_components
     cargo build || fatal "Can't build system! Abort."
+    exit 0
+}
+
+main_boot() {
+    mkdir kernel || fatal "Can't create kernel folder"
+    mv src kernel || fatal "Can't move src to kernel!"
+    mkdir kernel/.cargo || fatal "Can't create cargo data folder for kernel. Abort"
+    cp configs/$ARCH.default.toml kernel/.cargo/config.toml || fatal "Arch not detected (main config@kernel). Abort"
+    cp configs/Cargo_$ARCH.default.toml kernel/Cargo.toml || fatal "Arch not detected (cargo@kernel). Abort"
+    mv build.rs kernel || fatal "Can't move build.rs of kernel! Abort"
+    mv boot_target src || fatal "Can't create new src folder! Abort"
+    mv src/build.rs . || fatal "Can't move build.rs of bootloader! Abort"
+    main_kernel
 }
 
 if [ -z ${ARCH+x} ]; then 
@@ -75,9 +89,14 @@ done
 DIR=$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )
 ## END
 
+TARGET=default
+
+cd $DIR
+
 if [ ! -z ${1+x} ]; then
-    sleep 1
-    exit 1
+    if [ $1 = "boot" ]; then
+        main_boot
+    fi
 fi
 
 main_kernel
