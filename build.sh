@@ -33,7 +33,7 @@ install_rust() {
 
 # Adding components
 install_components() {
-    rustup component add rust-std llvm-tools-preview cargo || fatal "Components installation failed! Abort"
+    rustup component add rust-std llvm-tools-preview cargo rust-src || fatal "Components installation failed! Abort"
 }
 
 main_kernel () {
