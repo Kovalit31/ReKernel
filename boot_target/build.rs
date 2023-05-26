@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use crate::bootloader;
 
 fn main() {
     // set by cargo, build scripts should use this directory for output files
