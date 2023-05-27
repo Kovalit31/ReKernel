@@ -78,10 +78,6 @@ if [ -z ${VERSION+x} ]; then
     VERSION=""
 fi
 
-CURPWD=$(pwd)
-
-## STACKOVERFLOW
-SOURCE=${BASH_SOURCE[0]}
 while [ -L "$SOURCE" ]; do # resolve $SOURCE until the file is no longer a symlink
   DIR=$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )
   SOURCE=$(readlink "$SOURCE")
@@ -90,7 +86,9 @@ done
 DIR=$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )
 ## END
 
-TARGET=default
+if [ -z ${TARGET+x} ]; then 
+    TARGET=default
+fi
 
 cd $DIR
 
