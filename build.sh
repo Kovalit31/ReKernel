@@ -49,7 +49,7 @@ main_kernel () {
     fi
 
     install_components
-    cargo build -Zbuild-std || fatal "Can't build system! Abort."
+    cargo build -Zbuild-std=std,panic_abort,core || fatal "Can't build system! Abort."
     exit 0
 }
 
