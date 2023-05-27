@@ -45,10 +45,11 @@ main_kernel () {
     if [ $ARCH = "x86_64" ]; then
         rustup toolchain install nightly$VERSION-x86_64-unknown-linux-gnu || fatal "Toolchain not installable. Abort"
         rustup default nightly$VERSION-x86_64-unknown-linux-gnu || warning "Can't set default toolchain!"
+        rustup target add x86_64-unknown-none || fatal "Can't install target! Abort"
     fi
 
     install_components
-    cargo build || fatal "Can't build system! Abort."
+    cargo build -Zbuild-std || fatal "Can't build system! Abort."
     exit 0
 }
 
