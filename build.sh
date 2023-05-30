@@ -52,6 +52,7 @@ main_kernel () {
 
     install_components
     cargo build || fatal "Can't build system! Abort."
+    cargo run || fatal "Can't run system! Abort"
     exit 0
 }
 
