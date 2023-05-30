@@ -34,6 +34,7 @@ install_rust() {
 # Adding components
 install_components() {
     rustup component add rust-std llvm-tools-preview cargo rust-src || fatal "Components installation failed! Abort"
+    cargo install bootimage || fatal "Can't install bootimage! Abort"
 }
 
 main_kernel () {
@@ -54,18 +55,18 @@ main_kernel () {
     exit 0
 }
 
-main_boot() {
-    mkdir kernel || fatal "Can't create kernel folder"
-    mv src kernel || fatal "Can't move src to kernel!"
-    mkdir kernel/.cargo || fatal "Can't create cargo data folder for kernel. Abort"
-    cp configs/$ARCH.default.toml kernel/.cargo/config.toml || fatal "Arch not detected (main config@kernel). Abort"
-    cp configs/Cargo_$ARCH.default.toml kernel/Cargo.toml || fatal "Arch not detected (cargo@kernel). Abort"
-    cp configs/$ARCH.target.json kernel/target.json || fatal "Arch not detected (cargo@target). Abort"
-    mv build.rs kernel || fatal "Can't move build.rs of kernel! Abort"
-    mv boot_target src || fatal "Can't create new src folder! Abort"
-    mv src/build.rs . || fatal "Can't move build.rs of bootloader! Abort"
-    main_kernel
-}
+# main_boot() {
+#     mkdir kernel || fatal "Can't create kernel folder"
+#     mv src kernel || fatal "Can't move src to kernel!"
+#     mkdir kernel/.cargo || fatal "Can't create cargo data folder for kernel. Abort"
+#     cp configs/$ARCH.default.toml kernel/.cargo/config.toml || fatal "Arch not detected (main config@kernel). Abort"
+#     cp configs/Cargo_$ARCH.default.toml kernel/Cargo.toml || fatal "Arch not detected (cargo@kernel). Abort"
+#     cp configs/$ARCH.target.json kernel/target.json || fatal "Arch not detected (cargo@target). Abort"
+#     mv build.rs kernel || fatal "Can't move build.rs of kernel! Abort"
+#     mv boot_target src || fatal "Can't create new src folder! Abort"
+#     mv src/build.rs . || fatal "Can't move build.rs of bootloader! Abort"
+#     main_kernel
+# }
 
 if [ -z ${ARCH+x} ]; then 
     ARCH=$(uname -m | sed -e s/i.86/x86/ -e s/x86_64/x86_64/ \
@@ -101,11 +102,11 @@ if [ -d ".cargo" ]; then
     ./build.sh $@; exit $?
 fi
 
-if [ ! -z ${1+x} ]; then
-    if [ $1 = "boot" ]; then
-        TARGET=boot
-        main_boot
-    fi
-fi
+# if [ ! -z ${1+x} ]; then
+#     if [ $1 = "boot" ]; then
+#         TARGET=boot
+#         main_boot
+#     fi
+# fi
 
 main_kernel
