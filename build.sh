@@ -40,6 +40,7 @@ main_kernel () {
     mkdir .cargo || fatal "Can't create cargo data folder! Abort"
     cp configs/$ARCH.$TARGET.toml .cargo/config.toml || fatal "Arch or target (main config) not detected. Abort"
     cp configs/Cargo_$ARCH.$TARGET.toml Cargo.toml || fatal "Arch or target (cargo) not detected. Abort"
+    cp configs/$ARCH.target.json target.json || fatal "Arch or target (target) not detected. Abort"
     check_cmd rustup || install_rust
 
     if [ $ARCH = "x86_64" ]; then
@@ -59,6 +60,7 @@ main_boot() {
     mkdir kernel/.cargo || fatal "Can't create cargo data folder for kernel. Abort"
     cp configs/$ARCH.default.toml kernel/.cargo/config.toml || fatal "Arch not detected (main config@kernel). Abort"
     cp configs/Cargo_$ARCH.default.toml kernel/Cargo.toml || fatal "Arch not detected (cargo@kernel). Abort"
+    cp configs/$ARCH.target.json kernel/target.json || fatal "Arch not detected (cargo@target). Abort"
     mv build.rs kernel || fatal "Can't move build.rs of kernel! Abort"
     mv boot_target src || fatal "Can't create new src folder! Abort"
     mv src/build.rs . || fatal "Can't move build.rs of bootloader! Abort"

@@ -4,7 +4,7 @@ version = "0.1.0"
 
 [build-dependencies]
 bootloader = "0.11.3"
-unified_os = { path = "kernel", artifact = "bin", target = "x86_64-unknown-none"}
+unified_os = { path = "kernel", artifact = "bin", target = "target.json"}
 
 [dependencies]
 # used for UEFI booting in QEMU
