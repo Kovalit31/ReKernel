@@ -2,8 +2,4 @@
 target = "target.json"
 
 [unstable]
-build-std = ["std","panic_abort","core","compiler_builtins"]
-build-std-features = ["compiler-builtins-mem"]
-
-[target.'cfg(target_os = "none")']
-runner = "bootimage runner"
+build-std = ["std","panic_abort","core"] 
