@@ -26,9 +26,6 @@ LOG_DIR = os.path.join(BASE_DIR, "logs")
 GLOBAL_LOG = os.path.join(LOG_DIR, f'{time.strftime("%Y-%m-%d %H:%M:%S")}.log')
 SCR_LOG = os.path.join(LOG_DIR, 'logger')
 
-# Runtime "dark" and "awful" variables
-# LATEST_DAMAGE = False
-
 class ExecutingInterrupt:
     '''
     Configurable script interrupt handler
