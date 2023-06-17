@@ -14,11 +14,11 @@ fatal() {
     exit 1
 }
 
-check_cmd() {
+main() {
     if [ -z ${1+x} ]; then 
         fatal "\$1 is unsetted! Can't check command"
     fi
     (command -v $1 &> /dev/null) || fatal "$1: command not found"
 }
 
-check_cmd "$4"
+main "$4"

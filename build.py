@@ -6,22 +6,38 @@ import shutil
 import time
 from argparse import ArgumentParser
 
+# Verbosity
 DEBUG = False
 VERBOSE = False
+
+# Versions
 MAJOR_VER = 0
 MINOR_VER = 1
 PATCH_LEVEL = 2
 EXTRA = "alpha"
 VERSION = ".".join([str(x) for x in [MAJOR_VER, MINOR_VER, PATCH_LEVEL]])+(f"-{EXTRA}" if EXTRA != None else "")
-LOGDIR = os.path.join(os.path.dirname(__file__), "logs")
-LOGFILE = os.path.join(LOGDIR, f'{time.strftime("%Y-%m-%d %H:%M:%S")}.log')
-SCR_LOG = os.path.join(LOGDIR, 'logger')
+
+# Runtime folders
+BASE_DIR = os.path.dirname(__file__)
+SCR_DIR = os.path.join(BASE_DIR, "scripts")
+LOG_DIR = os.path.join(BASE_DIR, "logs")
+
+# Logging
+GLOBAL_LOG = os.path.join(LOG_DIR, f'{time.strftime("%Y-%m-%d %H:%M:%S")}.log')
+SCR_LOG = os.path.join(LOG_DIR, 'logger')
+
+# Runtime "dark" and "awful" variables
+# LATEST_DAMAGE = False
 
 class ExecutingInterrupt:
+    '''
+    Configurable script interrupt handler
+    '''
     interrupt = False
     
-    def __init__(self, exit_msg=None) -> None:
+    def __init__(self, exit_msg=None, exit=True) -> None:
         self.msg = exit_msg
+        self.exit = exit
     
     def _handler(self, signum, frame) -> None:
         self.interrupt = True
@@ -29,8 +45,10 @@ class ExecutingInterrupt:
         self.frame = frame
     
     def __enter__(self) -> None:
+        create_file(SCR_LOG)
         self.old_sigint = signal.signal(signal.SIGINT, self._handler)
         self.old_sigterm = signal.signal(signal.SIGTERM, self._handler)
+        return self
     
     def __exit__(self, type, value, traceback) -> None:
         signal.signal(signal.SIGINT, self.old_sigint)
@@ -39,7 +57,10 @@ class ExecutingInterrupt:
             printf(self.msg, level='e') if not self.msg == None else printf("Output of script: " + read_log(script_log=True), level='e')
             save_logs()
             remove_log(script_log=True)
-            sys.exit(self.signal)
+            if self.exit:
+                sys.exit(self.signal)
+            else:
+                LATEST_DAMAGE = True
 
 def do_nothing() -> None:
     pass
@@ -132,33 +153,35 @@ def read(path: str) -> list:
         return ""
 
 def read_log(script_log=False) -> str:
-    return ("".join(read(LOGFILE)) if not script_log else "".join(read(SCR_LOG)))
+    return ("".join(read(GLOBAL_LOG)) if not script_log else "".join(read(SCR_LOG)))
 
 def write_log(something: str) -> None:
-    write(LOGFILE, f'[{time.strftime("%Y-%m-%d %H:%M:%S")} ({time.process_time()} from start)] ' + something, append=True)
+    write(GLOBAL_LOG, f'[{time.strftime("%Y-%m-%d %H:%M:%S")} ({time.process_time()} from start)] ' + something, append=True)
 
 def remove_log(script_log=False) -> None:
-    remove(LOGFILE if not script_log else SCR_LOG)
+    remove(GLOBAL_LOG if not script_log else SCR_LOG)
 
 def save_logs() -> None:
     data = read_log(script_log=True)
     write_log("Output of previous script: " + data) if data != "" and data != None and type(data) == str else do_nothing()
 
-def execute(script: str, args="", exit_msg=None) -> True:
+def execute(script: str, args="", exit_msg=None, exit=True) -> True:
     '''
     Runner of scripts under scripts folder.
     If script fails, it might to kill parent (this script) by $1 argument
     Basedir can be accessed by $2.
     Logging file is on $3 argument.
     '''
-    SCR_FOLDER = os.path.join(os.path.dirname(__file__), "scripts")
-    SCRIPT = os.path.join(SCR_FOLDER, f"{script}.sh")
+    SCRIPT = os.path.join(SCR_DIR, f"{script}.sh")
     if not os.path.exists(SCRIPT):
         raise Exception(f"No script found {SCRIPT}")
-    create_file(SCR_LOG)
-    with ExecutingInterrupt() as ei:
+    with ExecutingInterrupt(exit_msg=exit_msg, exit=exit) as ei:
         os.system(f"chmod 755 {SCRIPT}")
-        os.system(f"\"{SCRIPT}\" {os.getpid()} \"{os.path.dirname(__file__)}\" \"{SCR_LOG}\" {'' if args == None else args if type(args) != list else ' '.join(args)}")
+        os.system(f"\"{SCRIPT}\" {os.getpid()} \"{BASE_DIR}\" \"{SCR_LOG}\" {'' if args == None else args if type(args) != list else ' '.join(args)}")
+        if ei.interrupt and not exit:
+            save_logs()
+            remove_log(script_log=True)
+            return True
     save_logs()
     remove_log(script_log=True)
     
@@ -172,15 +195,29 @@ def arg_parse():
     args = parser.parse_args()
     return args
 
+def clean():
+    execute("build/clean")
+    remove(LOG_DIR, recursive=True)
+    sys.exit(0)
+
+def build_default(arch: str, target: str) -> None:
+    execute("build/prepare", args=f"\"{arch}\" \"{target}\"")
+    if execute("core/cmd_chk", args="rustup", exit=False):
+        execute("build_sys_install/rustup")
+    execute("build_sys_install/toolchain", args=f"{arch}")
+    execute("build_sys_install/components")
+    execute("build/build", args=f"{'release' if not DEBUG else 'debug'}")
+    execute("build/run", args=f"{'release' if not DEBUG else 'debug'}")
+
 def main(args):
     DEBUG = args.debug
     VERBOSE = args.verbose
-    create_dir(LOGDIR)
-    create_file(LOGFILE)
+    create_dir(LOG_DIR)
+    create_file(GLOBAL_LOG)
     if args.target == "clean":
-        remove(LOGDIR, recursive=True)
-        sys.exit(0)
-    execute("check_cmd", args="grkerg", exit_msg="Preparing failed! Dirs can't be created! Abort")
+        clean()
+    elif args.target == "default":
+        build_default(args.arch, args.target)
 
 if __name__ == "__main__":
     main(arg_parse())
