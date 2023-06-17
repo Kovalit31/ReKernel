@@ -14,6 +14,11 @@ warning() {
     echo "[!]" $1
 }
 
+help() {
+    echo -e "Usage $0 [TARGET] \
+    \nhelp - "
+}
+
 check_cmd() {
     if [ -z ${1+x} ]; then 
         warning "\$1 is unsetted! Can't check command"
@@ -35,6 +40,13 @@ install_rust() {
 install_components() {
     rustup component add rust-std llvm-tools-preview cargo rust-src || fatal "Components installation failed! Abort"
     cargo install bootimage || fatal "Can't install bootimage! Abort"
+}
+
+prepare() {
+    content=$(ls .)
+    ( mkdir build && cd build ) || fatal "Can't create build dir! Abort"
+    for x in $content; do cp -r $x build/; done
+    cd build
 }
 
 main_kernel () {
