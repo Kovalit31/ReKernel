@@ -1,15 +1,11 @@
 [package]
-name = "unified_os"
+name = "unified_os_boot"         # or any other name
 version = "0.1.0"
-edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[build-dependencies]
+bootloader = "0.11.3"
+unified_os = { path = "kernel", artifact = "bin", target = "target.json"}
 
 [dependencies]
-bootloader_api = "0.11.3"
-
-[profile.dev]
-panic = "abort"
-
-[profile.release]
-panic = "abort"
+# used for UEFI booting in QEMU
+ovmf-prebuilt = "0.1.0-alpha.1"
