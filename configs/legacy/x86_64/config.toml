@@ -1,0 +1,8 @@
+[build]
+target = "target.json"
+
+[unstable]
+build-std = ["std","panic_abort","core"]
+
+[target.'cfg(target_os = "none")']
+runner = "bootimage runner"

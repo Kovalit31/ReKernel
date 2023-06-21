@@ -62,7 +62,7 @@ class ExecutingInterrupt:
 def do_nothing() -> None:
     pass
 
-def printf(*message, level="*"):
+def printf(*message, level="i"):
     '''
     Formats message with level.
     Exit, when fatal. Like in customcmd.
@@ -185,7 +185,7 @@ def execute(script: str, args="", exit_msg=None, exit=True) -> True:
 
 def arg_parse():
     parser =  ArgumentParser(description="Build system for UnOS kernel", epilog="Under GNU v3 Public license. UnOS is not new OS, it is Linux rewrite to Rust")
-    parser.add_argument("target", help="Build terget (clean will clear logs and data)", default="default", choices=["default", "clean"], metavar="TARGET", nargs="?")
+    parser.add_argument("target", help="Build terget (clean will clear logs and data)", default="legacy", choices=["legacy", "clean", "efi", "bios"], metavar="TARGET", nargs="?")
     parser.add_argument("-v", "--verbose", help="Be verbose", action="store_true")
     parser.add_argument("--debug", help="Switch into debug configuration", action='store_true')
     parser.add_argument("-a", "--arch", help="Build for ARCH", default="x86_64", choices=["x86_64"])
@@ -197,7 +197,7 @@ def clean():
     remove(LOG_DIR, recursive=True)
     sys.exit(0)
 
-def build_default(arch: str, target: str) -> None:
+def build(arch: str, target: str) -> None:
     execute("build/prepare", args=f"\"{arch}\" \"{target}\"")
     if execute("core/cmd_chk", args="rustup", exit=False):
         execute("build_sys_install/rustup")
@@ -213,8 +213,10 @@ def main(args):
     create_file(GLOBAL_LOG)
     if args.target == "clean":
         clean()
-    elif args.target == "default":
-        build_default(args.arch, args.target)
+    else:
+        if args.target != "legacy":
+            printf(f"Feature {args.target} is unstable! There may be bugs with compiling!", level='w')
+        build(args.arch, args.target)
 
 if __name__ == "__main__":
     main(arg_parse())
