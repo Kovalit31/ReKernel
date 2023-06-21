@@ -62,7 +62,7 @@ class ExecutingInterrupt:
 def do_nothing() -> None:
     pass
 
-def printf(*message, level="*"):
+def printf(*message, level="i"):
     '''
     Formats message with level.
     Exit, when fatal. Like in customcmd.
@@ -214,6 +214,8 @@ def main(args):
     if args.target == "clean":
         clean()
     else:
+        if args.target != "legacy":
+            printf(f"Feature {args.target} is unstable! There may be bugs with compiling!", level='w')
         build(args.arch, args.target)
 
 if __name__ == "__main__":
