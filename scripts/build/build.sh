@@ -22,10 +22,14 @@ main() {
     cd "$BASEDIR/build"
     if [ "$1" == "debug" ]; then
         cargo build
-        cargo bootimage
+        if [ ! -d "kernel" ]; then
+            cargo bootimage
+        fi
     else
         cargo build --release
-        cargo bootimage --release
+        if [ ! -d "kernel" ]; then
+            cargo bootimage --release
+        fi
     fi
 }
 
