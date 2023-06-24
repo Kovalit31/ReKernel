@@ -58,7 +58,7 @@ main() {
         mkdir kernel/.cargo
     fi
     if [ ! -f "kernel/.cargo/config.toml" ]; then
-        cp "configs/$2/$1/config_kernel.toml" kernel/.cargo
+        cp "configs/$2/$1/config_kernel.toml" kernel/.cargo/config.toml
     fi
     if [ ! -f "kernel/Cargo.toml" ]; then
         cp "configs/$2/$1/cargo_kernel.toml" "kernel/Cargo.toml"
