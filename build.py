@@ -29,7 +29,6 @@ SCR_DIR = os.path.join(BASE_DIR, "scripts")
 LOG_DIR = os.path.join(BASE_DIR, "logs")
 
 # Logging
-GLOBAL_LOG = os.path.join(LOG_DIR, f'{time.strftime("%Y-%m-%d %H:%M:%S")}.log')
 SCR_LOG = os.path.join(LOG_DIR, 'logger')
 
 class ExecutingInterrupt:
@@ -55,6 +54,33 @@ class ExecutingInterrupt:
         signal.signal(signal.SIGINT, self.old_sigint)
         signal.signal(signal.SIGTERM, self.old_sigterm)
 
+class LogFile:
+    def __init__(self, file: str, parent: LogFile = None) -> None:
+        self.file = file
+        if not check_path(file):
+            create_file(file)
+            self.clear()
+        if not check_file(file):
+            printf(f"Given path '{file}' is not a file!", level='f')
+        self.have_parent = parent != None
+        self.parent = parent
+
+    def read(self) -> str:
+        return "".join(read(self.file))
+
+    def write(self, data: str) -> None:
+        write(self.file, data, append=True)
+
+    def clear(self) -> None:
+        write(self.file, "# ---------- Start ----------", append=False)
+
+    def save_to_parent(self) -> None:
+        self.parent.write(self.read()) if have_parent else do_nothing()
+
+    def remove(self) -> None:
+        remove(self.path)
+        del(self)
+
 # Thanks for inputimeout project
 class TimeoutOccurred(Exception):
     pass
@@ -76,6 +102,8 @@ def posix_inputimeout(prompt='', timeout=30):
         echo("\n")
         termios.tcflush(sys.stdin, termios.TCIFLUSH)
         raise TimeoutOccurred()
+
+# END
 
 def debug_executor(executor):
     def wrap(*args, **kwargs):
@@ -127,7 +155,7 @@ def printf(*message, level="i"):
         return
     msg = f"[{'*' if _level == 'i' else '!' if _level == 'w' else '@' if _level == 'e' else '~' if _level == 'd' else '.' if _level == 'v' else '&' if _level == 'f' else '?'}] {string}".replace("\n", "\n[`] ")
     print(msg)
-    write_log(msg)
+#    write_log(msg) TODO
     if _level == 'f':
         raise Exception(string)
 
@@ -199,6 +227,7 @@ def read(path: str) -> list:
     except:
         return ""
 
+# TODO remove next
 def read_log(script_log=False) -> str:
     global GLOBAL_LOG
     return ("".join(read(GLOBAL_LOG)) if not script_log else "".join(read(SCR_LOG)))
@@ -224,9 +253,6 @@ def execute(script: str, args="", exit_msg=None, exit=True):
     Basedir can be accessed by $2.
     Logging file is on $3 argument.
     '''
-    global SCR_DIR
-    global BASE_DIR
-    global SCR_LOG
     script = os.path.join(SCR_DIR, f"{script}.sh")
     if not os.path.exists(script):
         raise Exception(f"No script found {script}")
@@ -234,7 +260,7 @@ def execute(script: str, args="", exit_msg=None, exit=True):
         os.system(f"chmod 755 {script}")
         os.system(f"\"{script}\" {os.getpid()} \"{BASE_DIR}\" \"{SCR_LOG}\" {'' if args == None else args if type(args) != list else ' '.join(args)}")
         interrupt = ei.interrupt
-    
+    # TODO do as class objects
     save_logs()
     logs = read_log(script_log=True)
     remove_log(script_log=True)
@@ -247,15 +273,16 @@ def arg_parse():
     parser =  ArgumentParser(description="Build system for UnOS kernel", epilog="Under GNU v3 Public license. UnOS is not new OS, it is Linux rewrite to Rust")
     parser.add_argument("target", help="Build terget (clean will clear logs and data)", default="legacy", choices=["legacy", "clean", "efi", "bios"], metavar="TARGET", nargs="?")
     parser.add_argument("-v", "--verbose", help="Be verbose", action="store_true")
-    parser.add_argument("--debug", help="Switch into debug configuration", action='store_true')
+    parser.add_argument("-d", "--debug", help="Switch into debug configuration", action='store_true')
     parser.add_argument("--timeout", help="Timeout for input (for debug console)", type=int, metavar="TIMEOUT")
-    parser.add_argument("-a", "--arch", help="Build for ARCH", default="x86_64", choices=["x86_64"])
+    parser.add_argument("--logdir", help="Logging directory", type=str, metavar="LOGDIR"
+    parser.add_argument("-a", "--arch", help="Build for ARCH", default="x86_64", choices=["x86_64"], metavar="ARCH")
     args = parser.parse_args()
     return args
 
-def clean():
+def clean(logdir=None):
     execute("build/clean")
-    remove(LOG_DIR, recursive=True)
+    remove(logdir, recursive=True)
     sys.exit(0)
 
 def build(arch: str, target: str) -> None:
@@ -272,13 +299,15 @@ def main(args):
     global DEBUG
     global VERBOSE
     global INPUT_TIMEOUT
+    global GLOBAL_LOG
+    global SCRIPT_LOG
     DEBUG = args.debug
     VERBOSE = args.verbose
     INPUT_TIMEOUT = args.timeout
-    create_dir(LOG_DIR)
-    create_file(GLOBAL_LOG)
+    logdir = args.logdir
+    GLOBAL_LOG = os.path.join(logir, f'{time.strftime("%Y-%m-%d %H:%M:%S")}.log')
     if args.target == "clean":
-        clean()
+        clean(logdir=logdir)
     else:
         if args.target != "legacy":
             printf(f"Feature {args.target} is unstable! There may be bugs with compiling!", level='w')
