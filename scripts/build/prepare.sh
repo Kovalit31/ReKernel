@@ -7,7 +7,7 @@ LOGGER="$3"
 
 # Logger
 log() {
-    (echo "$1" | tee -a -i $LOGGER) > /dev/null
+    ( echo -e "\n$1" | tee -a -i $LOGGER ) > /dev/null
 }
 
 # Fatal trap. CAUTION: Kills parrent and stop executing!

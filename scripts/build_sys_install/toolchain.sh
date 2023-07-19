@@ -4,10 +4,13 @@ PARENT_PID="$1"
 BASEDIR="$2"
 LOGGER="$3"
 
-
 # Logger
 log() {
-    (echo "$1" | tee -a -i $LOGGER) > /dev/null
+    (echo -e "\n$1" | tee -a -i $LOGGER) > /dev/null
+}
+
+exec_log() {
+    $@ > >( tee -a -i "$LOGGER" ) 2>&1
 }
 
 # Fatal trap. CAUTION: Kills parrent and stop executing!
@@ -25,8 +28,6 @@ main() {
         rustup target add x86_64-unknown-none || fatal "Can't install target! Abort"
     fi
 }
-
-# TODO Rustc version, x86 on x86_64
 
 # Call (May use additional arguments)
 main "$4"

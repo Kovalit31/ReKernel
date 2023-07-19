@@ -9,13 +9,6 @@ import time
 import pty
 from argparse import ArgumentParser
 
-# Verbosity
-DEBUG = False
-VERBOSE = False
-
-# Timeout
-INPUT_TIMEOUT = 5
-
 # Versions
 MAJOR_VER = 0
 MINOR_VER = 1
@@ -26,10 +19,6 @@ VERSION = ".".join([str(x) for x in [MAJOR_VER, MINOR_VER, PATCH_LEVEL]])+(f"-{E
 # Runtime folders
 BASE_DIR = os.path.dirname(__file__)
 SCR_DIR = os.path.join(BASE_DIR, "scripts")
-LOG_DIR = os.path.join(BASE_DIR, "logs")
-
-# Logging
-SCR_LOG = os.path.join(LOG_DIR, 'logger')
 
 class ExecutingInterrupt:
     '''
@@ -45,7 +34,6 @@ class ExecutingInterrupt:
         self.frame = frame
     
     def __enter__(self) -> None:
-        create_file(SCR_LOG)
         self.old_sigint = signal.signal(signal.SIGINT, self._handler)
         self.old_sigterm = signal.signal(signal.SIGTERM, self._handler)
         return self
@@ -55,27 +43,32 @@ class ExecutingInterrupt:
         signal.signal(signal.SIGTERM, self.old_sigterm)
 
 class LogFile:
-    def __init__(self, file: str, parent: LogFile = None) -> None:
+    def __init__(self, file: str, parent=None) -> None:
         self.file = file
+        self.have_parent = parent != None
+        self.parent = parent
+        if not check_dir(os.path.dirname(file)):
+            create_dir(os.path.dirname(file))
         if not check_path(file):
             create_file(file)
             self.clear()
         if not check_file(file):
             printf(f"Given path '{file}' is not a file!", level='f')
-        self.have_parent = parent != None
-        self.parent = parent
+        if type(parent) != type(self) and parent != None:
+            printf(f"Parent log is not a LogFile object!", level='f')
 
     def read(self) -> str:
-        return "".join(read(self.file))
+        return "".join(read(self.file)).rstrip()
 
     def write(self, data: str) -> None:
-        write(self.file, data, append=True)
+        write(self.file, data.replace("\n\n", "\n").replace("\n", f'\n[{time.strftime("%Y-%m-%d %H:%M:%S")} ({time.process_time()} from start)] '), append=True)
 
     def clear(self) -> None:
-        write(self.file, "# ---------- Start ----------", append=False)
+        write(self.file, "", append=False)
+        self.write("# ---------- Start ----------\n" if not self.have_parent else "# ---------- Start ----------")
 
-    def save_to_parent(self) -> None:
-        self.parent.write(self.read()) if have_parent else do_nothing()
+    def save_to_parent(self, prevscr: str = None) -> None:
+        self.parent.write(f'Output of {"previous script" if prevscr == None else prevscr}:\n{self.read()}\n') if self.have_parent else do_nothing()
 
     def remove(self) -> None:
         remove(self.path)
@@ -107,8 +100,6 @@ def posix_inputimeout(prompt='', timeout=30):
 
 def debug_executor(executor):
     def wrap(*args, **kwargs):
-        global DEBUG
-        global INPUT_TIMEOUT
         if DEBUG:
             try:
                 _input = posix_inputimeout(prompt=f"Executor console is ACTIVE\nYou can debug executor with your own commands.\nPress ENTER on {INPUT_TIMEOUT} seconds or skip to continue...", timeout=INPUT_TIMEOUT)
@@ -147,15 +138,13 @@ def printf(*message, level="i"):
     '''
     string = " ".join(message)
     _level = level[0].lower().strip()
-    global DEBUG 
-    global VERBOSE
     if _level == 'd' and not DEBUG:
         return
     if _level == 'v' and not VERBOSE:
         return
     msg = f"[{'*' if _level == 'i' else '!' if _level == 'w' else '@' if _level == 'e' else '~' if _level == 'd' else '.' if _level == 'v' else '&' if _level == 'f' else '?'}] {string}".replace("\n", "\n[`] ")
     print(msg)
-#    write_log(msg) TODO
+    GLOBAL_LOG.write(msg)
     if _level == 'f':
         raise Exception(string)
 
@@ -227,10 +216,79 @@ def read(path: str) -> list:
     except:
         return ""
 
-# TODO remove next
-def read_log(script_log=False) -> str:
-    global GLOBAL_LOG
-    return ("".join(read(GLOBAL_LOG)) if not script_log else "".join(read(SCR_LOG)))
+@debug_executor
+def execute(script: str, args="", exit_msg=None, exit=True):
+    '''
+    Runner of scripts under scripts folder.
+    If script fails, it might to kill parent (this script) by $1 argument
+    Basedir can be accessed by $2.
+    Logging file is on $3 argument.
+    '''
+    script = os.path.join(SCR_DIR, f"{script}.sh")
+    if not os.path.exists(script):
+        raise Exception(f"No script found {script}")
+    with ExecutingInterrupt() as ei:
+        os.system(f"chmod 755 {script}")
+        os.system(f"\"{script}\" {os.getpid()} \"{BASE_DIR}\" \"{SCRIPT_LOG.file}\" {'' if args == None else args if type(args) != list else ' '.join(args)}")
+        interrupt = ei.interrupt
+    SCRIPT_LOG.save_to_parent(prevscr=script)
+    logs = SCRIPT_LOG.read()
+    SCRIPT_LOG.clear()
+    if interrupt:
+        if not exit:
+            return True
+        printf(f"Error occured at {script}\n{logs}" if exit_msg == None else exit_msg, level='f')
+
+def arg_parse():
+    parser =  ArgumentParser(description="Build system for UnOS kernel", epilog="Under GNU v3 Public license. UnOS is not new OS, it is Linux rewrite to Rust")
+    parser.add_argument("target", help="Build terget (clean will clear logs and data)", default="legacy", choices=["legacy", "clean", "efi", "bios"], metavar="TARGET", nargs="?")
+    parser.add_argument("-v", "--verbose", help="Be verbose", action="store_true")
+    parser.add_argument("-d", "--debug", help="Switch into debug configuration", action='store_true')
+    parser.add_argument("--timeout", help="Timeout for input (for debug console)", type=int, default=5, metavar="TIMEOUT")
+    parser.add_argument("--logdir", help="Logging directory", type=str, metavar="LOGDIR", default=os.path.join(BASE_DIR, "logs"))
+    parser.add_argument("-a", "--arch", help="Build for ARCH", default="x86_64", choices=["x86_64"], metavar="ARCH")
+    args = parser.parse_args()
+    return args
+
+def clean(logdir=None):
+    execute("build/clean")
+    remove(logdir, recursive=True) if logdir != None else do_nothing()
+    sys.exit(0)
+
+def build(arch: str, target: str) -> None:
+    execute("build/prepare", args=f"\"{arch}\" \"{target}\"")
+    execute("build_sys_install/rustup")
+    execute("build_sys_install/toolchain", args=f"{arch}")
+    execute("build_sys_install/components")
+    execute("build/build", args=f"{'release' if not DEBUG else 'debug'}")
+    execute("build/run", args=f"{'release' if not DEBUG else 'debug'}")
+
+if __name__ != "__main__":
+    exit()
+
+args = arg_parse()
+logdir = args.logdir
+
+global DEBUG
+global VERBOSE
+global INPUT_TIMEOUT
+global GLOBAL_LOG
+global SCRIPT_LOG
+
+DEBUG = args.debug
+VERBOSE = args.verbose
+INPUT_TIMEOUT = args.timeout
+GLOBAL_LOG = LogFile(os.path.join(logdir, f'{time.strftime("%Y-%m-%d %H:%M:%S")}.log'))
+SCRIPT_LOG = LogFile(os.path.join(logdir, 'script_logger.log'), parent=GLOBAL_LOG)
+
+if args.target == "clean":
+    clean(logdir=logdir)
+else:
+    if args.target != "legacy":
+        printf(f"Feature {args.target} is unstable! There may be bugs with compiling!", level='w')
+    build(args.arch, args.target)
+
+
 
 def write_log(something: str) -> None:
     global GLOBAL_LOG
@@ -245,73 +303,3 @@ def save_logs() -> None:
     data = read_log(script_log=True)
     write_log("Output of previous script: " + data) if data != "" and data != None and type(data) == str else do_nothing()
 
-@debug_executor
-def execute(script: str, args="", exit_msg=None, exit=True):
-    '''
-    Runner of scripts under scripts folder.
-    If script fails, it might to kill parent (this script) by $1 argument
-    Basedir can be accessed by $2.
-    Logging file is on $3 argument.
-    '''
-    script = os.path.join(SCR_DIR, f"{script}.sh")
-    if not os.path.exists(script):
-        raise Exception(f"No script found {script}")
-    with ExecutingInterrupt() as ei:
-        os.system(f"chmod 755 {script}")
-        os.system(f"\"{script}\" {os.getpid()} \"{BASE_DIR}\" \"{SCR_LOG}\" {'' if args == None else args if type(args) != list else ' '.join(args)}")
-        interrupt = ei.interrupt
-    # TODO do as class objects
-    save_logs()
-    logs = read_log(script_log=True)
-    remove_log(script_log=True)
-    if interrupt:
-        if not exit:
-            return True
-        printf(f"Error occured at {script}\n{logs}" if exit_msg == None else exit_msg, level='f')
-
-def arg_parse():
-    parser =  ArgumentParser(description="Build system for UnOS kernel", epilog="Under GNU v3 Public license. UnOS is not new OS, it is Linux rewrite to Rust")
-    parser.add_argument("target", help="Build terget (clean will clear logs and data)", default="legacy", choices=["legacy", "clean", "efi", "bios"], metavar="TARGET", nargs="?")
-    parser.add_argument("-v", "--verbose", help="Be verbose", action="store_true")
-    parser.add_argument("-d", "--debug", help="Switch into debug configuration", action='store_true')
-    parser.add_argument("--timeout", help="Timeout for input (for debug console)", type=int, metavar="TIMEOUT")
-    parser.add_argument("--logdir", help="Logging directory", type=str, metavar="LOGDIR"
-    parser.add_argument("-a", "--arch", help="Build for ARCH", default="x86_64", choices=["x86_64"], metavar="ARCH")
-    args = parser.parse_args()
-    return args
-
-def clean(logdir=None):
-    execute("build/clean")
-    remove(logdir, recursive=True)
-    sys.exit(0)
-
-def build(arch: str, target: str) -> None:
-    global DEBUG
-    execute("build/prepare", args=f"\"{arch}\" \"{target}\"")
-    if execute("core/cmd_chk", args="rustup", exit=False):
-        execute("build_sys_install/rustup")
-    execute("build_sys_install/toolchain", args=f"{arch}")
-    execute("build_sys_install/components")
-    execute("build/build", args=f"{'release' if not DEBUG else 'debug'}")
-    execute("build/run", args=f"{'release' if not DEBUG else 'debug'}")
-
-def main(args):
-    global DEBUG
-    global VERBOSE
-    global INPUT_TIMEOUT
-    global GLOBAL_LOG
-    global SCRIPT_LOG
-    DEBUG = args.debug
-    VERBOSE = args.verbose
-    INPUT_TIMEOUT = args.timeout
-    logdir = args.logdir
-    GLOBAL_LOG = os.path.join(logir, f'{time.strftime("%Y-%m-%d %H:%M:%S")}.log')
-    if args.target == "clean":
-        clean(logdir=logdir)
-    else:
-        if args.target != "legacy":
-            printf(f"Feature {args.target} is unstable! There may be bugs with compiling!", level='w')
-        build(args.arch, args.target)
-
-if __name__ == "__main__":
-    main(arg_parse())
