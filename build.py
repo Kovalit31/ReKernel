@@ -18,7 +18,7 @@ VERSION = ".".join([str(x) for x in [MAJOR_VER, MINOR_VER, PATCH_LEVEL]])+(f"-{E
 
 # Runtime folders
 BASE_DIR = os.path.dirname(__file__)
-SCR_DIR = os.path.join(BASE_DIR, "scripts")
+SCRIPT_DIR = os.path.join(BASE_DIR, "scripts")
 
 class ExecutingInterrupt:
     '''
@@ -61,14 +61,13 @@ class LogFile:
         return "".join(read(self.file)).rstrip()
 
     def write(self, data: str) -> None:
-        write(self.file, data.replace("\n\n", "\n").replace("\n", f'\n[{time.strftime("%Y-%m-%d %H:%M:%S")} ({time.process_time()} from start)] '), append=True)
+        write(self.file, f'\n[{time.strftime("%Y-%m-%d %H:%M:%S")} ({time.process_time()} from start)] ' + data.replace("\n\n", "\n").rstrip().replace("\n", f'\n[{time.strftime("%Y-%m-%d %H:%M:%S")} ({time.process_time()} from start)] '), append=True)
 
     def clear(self) -> None:
-        write(self.file, "", append=False)
-        self.write("# ---------- Start ----------\n" if not self.have_parent else "# ---------- Start ----------")
+        write(self.file, "# START OF LOGGING\n", append=False)
 
     def save_to_parent(self, prevscr: str = None) -> None:
-        self.parent.write(f'Output of {"previous script" if prevscr == None else prevscr}:\n{self.read()}\n') if self.have_parent else do_nothing()
+        self.parent.write(f'Output of {"previous script" if prevscr == None else prevscr}:\n{self.read()}') if self.have_parent else do_nothing()
 
     def remove(self) -> None:
         remove(self.path)
@@ -224,7 +223,7 @@ def execute(script: str, args="", exit_msg=None, exit=True):
     Basedir can be accessed by $2.
     Logging file is on $3 argument.
     '''
-    script = os.path.join(SCR_DIR, f"{script}.sh")
+    script = os.path.join(SCRIPT_DIR, f"{script}.sh")
     if not os.path.exists(script):
         raise Exception(f"No script found {script}")
     with ExecutingInterrupt() as ei:
@@ -287,19 +286,3 @@ else:
     if args.target != "legacy":
         printf(f"Feature {args.target} is unstable! There may be bugs with compiling!", level='w')
     build(args.arch, args.target)
-
-
-
-def write_log(something: str) -> None:
-    global GLOBAL_LOG
-    write(GLOBAL_LOG, f'[{time.strftime("%Y-%m-%d %H:%M:%S")} ({time.process_time()} from start)] ' + something, append=True)
-
-def remove_log(script_log=False) -> None:
-    global GLOBAL_LOG
-    global SCR_LOG
-    remove(GLOBAL_LOG if not script_log else SCR_LOG)
-
-def save_logs() -> None:
-    data = read_log(script_log=True)
-    write_log("Output of previous script: " + data) if data != "" and data != None and type(data) == str else do_nothing()
-

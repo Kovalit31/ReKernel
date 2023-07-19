@@ -10,7 +10,7 @@ log() {
 }
 
 exec_log() {
-    $@ > >( tee -a -i "$LOGGER" ) 2>&1
+    ( ${@:2} || fatal "$1" ) > >( tee -a -i "$LOGGER" ) 2>&1
 }
 
 # Fatal trap. CAUTION: Kills parrent and stop executing!
@@ -24,14 +24,14 @@ fatal() {
 main() {
     cd "$BASEDIR/build"
     if [ "$1" == "debug" ]; then
-        exec_log cargo build
+        exec_log "Build failed!" cargo build
         if [ ! -d "kernel" ]; then
-            exec_log cargo bootimage
+            exec_log "Bootimage create failed!" cargo bootimage
         fi
     else
-        exec_log cargo build --release
+        exec_log "Build failed!" cargo build --release
         if [ ! -d "kernel" ]; then
-            exec_log cargo bootimage --release
+            exec_log "Bootimage create failed!" cargo bootimage --release
         fi
     fi
 }
