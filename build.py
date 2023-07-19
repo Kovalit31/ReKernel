@@ -7,6 +7,7 @@ import shutil
 import termios
 import time
 import pty
+import platform
 from argparse import ArgumentParser
 
 # Versions
@@ -113,15 +114,7 @@ def debug_executor(executor):
                         _exec = " "
                     break
                 if _exec[0].lower() == 'n':
-                    while True:
-                        _ret = input("Return True of False [t/f] ")
-                        if _ret == None or _ret == "":
-                            _ret = " "
-                        break
-                    if _ret[0] == 't':
-                        return True
-                    else:
-                        return False
+                    return
         return executor(*args, **kwargs)
     return wrap
 
@@ -163,6 +156,9 @@ def check_file(path) -> bool:
     if not os.path.isfile(os.path.realpath(path)):
         return False
     return True
+
+def check_sys() -> bool:
+    return platform.system().lower().startswith('linux')
 
 def remove(path: str, recursive=False) -> None:
     if check_dir(path) and not recursive:
@@ -216,7 +212,7 @@ def read(path: str) -> list:
         return ""
 
 @debug_executor
-def execute(script: str, args="", exit_msg=None, exit=True):
+def execute(script: str, args="", exit_msg=None):
     '''
     Runner of scripts under scripts folder.
     If script fails, it might to kill parent (this script) by $1 argument
@@ -234,8 +230,6 @@ def execute(script: str, args="", exit_msg=None, exit=True):
     logs = SCRIPT_LOG.read()
     SCRIPT_LOG.clear()
     if interrupt:
-        if not exit:
-            return True
         printf(f"Error occured at {script}\n{logs}" if exit_msg == None else exit_msg, level='f')
 
 def arg_parse():
@@ -243,6 +237,7 @@ def arg_parse():
     parser.add_argument("target", help="Build terget (clean will clear logs and data)", default="legacy", choices=["legacy", "clean", "efi", "bios"], metavar="TARGET", nargs="?")
     parser.add_argument("-v", "--verbose", help="Be verbose", action="store_true")
     parser.add_argument("-d", "--debug", help="Switch into debug configuration", action='store_true')
+    parser.add_argument('-n', "--norun", help="Don't run after build", action='store_true')
     parser.add_argument("--timeout", help="Timeout for input (for debug console)", type=int, default=5, metavar="TIMEOUT")
     parser.add_argument("--logdir", help="Logging directory", type=str, metavar="LOGDIR", default=os.path.join(BASE_DIR, "logs"))
     parser.add_argument("-a", "--arch", help="Build for ARCH", default="x86_64", choices=["x86_64"], metavar="ARCH")
@@ -254,12 +249,14 @@ def clean(logdir=None):
     remove(logdir, recursive=True) if logdir != None else do_nothing()
     sys.exit(0)
 
-def build(arch: str, target: str) -> None:
+def build(arch: str, target: str, norun=False) -> None:
     execute("build/prepare", args=f"\"{arch}\" \"{target}\"")
     execute("build_sys_install/rustup")
     execute("build_sys_install/toolchain", args=f"{arch}")
     execute("build_sys_install/components")
     execute("build/build", args=f"{'release' if not DEBUG else 'debug'}")
+    if norun:
+        return
     execute("build/run", args=f"{'release' if not DEBUG else 'debug'}")
 
 if __name__ != "__main__":
@@ -280,9 +277,12 @@ INPUT_TIMEOUT = args.timeout
 GLOBAL_LOG = LogFile(os.path.join(logdir, f'{time.strftime("%Y-%m-%d %H:%M:%S")}.log'))
 SCRIPT_LOG = LogFile(os.path.join(logdir, 'script_logger.log'), parent=GLOBAL_LOG)
 
+if not check_sys() and not DEBUG:
+    printf('Program can\'t be run on non-linux os!', level='f')
+
 if args.target == "clean":
     clean(logdir=logdir)
 else:
     if args.target != "legacy":
         printf(f"Feature {args.target} is unstable! There may be bugs with compiling!", level='w')
-    build(args.arch, args.target)
+    build(args.arch, args.target, norun=args.norun)
