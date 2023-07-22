@@ -19,7 +19,7 @@ jobs:
       uses: actions/setup-python@v4.7.0
       with:
         python-version: 3.8
-        architecture: x86_64
+        architecture: x64
     - name: Make dir for output
       run: mkdir /tmp/output
     - uses: actions/checkout@v3
