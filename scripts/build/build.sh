@@ -27,12 +27,12 @@ main() {
         if [ -d "kernel" ]; then
             cd kernel/
         fi
-        exec_log "Build failed!" cargo build
+        exec_log "Build failed!\nNote: May you need clean working directory?\nRun 'build.py clean'" cargo build
     else
         if [ -d "kernel" ]; then
             cd kernel/
         fi
-        exec_log "Build failed!" cargo build --release
+        exec_log "Build failed!\nNote: May you need clean working directory?\nRun 'build.py clean'" cargo build --release
     fi
 }
 

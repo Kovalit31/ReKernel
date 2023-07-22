@@ -3,6 +3,7 @@ import selectors
 import signal
 import sys
 import os
+import copy
 import shutil
 import termios
 import time
@@ -194,6 +195,8 @@ def printf(*message, level="i"):
     print(msg)
     GLOBAL_LOG.write(msg)
     if _level == 'f':
+        if not VERBOSE:
+            exit(2)
         raise Exception(string)
 
 # Check paths
@@ -368,12 +371,14 @@ recipes.load_recipe(RECIPE_BUILD_SYS_INSTALL__COMPONENTS, "build")
 recipes.load_recipe(RECIPE_BUILD__BUILD, "build")
 recipes.load_recipe(PYTHON_TEST, "build")
 recipes.load_recipe(RECIPE_BUILD__IMAGE, "build")
-recipes.load_recipe(RECIPE_BUILD__RUN, "build") if not norun else do_nothing()
+runner = recipes.load_recipe(RECIPE_BUILD__RUN, "build") if not norun else do_nothing()
 
 # Duplicate build group as base of other builds
 for x in TARGETS:
     if x != "clean" and x != "prepare":
-        recipes.recipes[x] = recipes.get_recipe_group("build")
+        recipes.recipes[x] = copy.deepcopy(recipes.get_recipe_group("build"))
+        if x != "legacy" and not norun:
+            recipes.unload_recipe(x, runner) # Unsupported
         
 if DEBUG:
     if target == "prepare":
@@ -389,6 +394,5 @@ if DEBUG:
 if not DEBUG:
     if target == "prepare":
         printf("Preparing is available only in DEBUG for development purposes.\nPlease rerun with --debug flag!", level='f')
-
 
 recipe_runner(recipes.get_recipe_group(target))
