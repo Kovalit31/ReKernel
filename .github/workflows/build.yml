@@ -1,0 +1,55 @@
+name: Build kernel with actions
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Setup Python
+      uses: actions/setup-python@v4.7.0
+      with:
+        python-version: 3.8
+        architecture: x86_64
+    - name: Make dir for output
+      run: mkdir /tmp/output
+    - uses: actions/checkout@v3
+    - name: Build with Python on debug (legacy)
+      run: python3 build.py --debug --nodebugconsole --norun
+    - name: Move debug artifact
+      run: mv build/target/target/debug/bootimage-unified_os.bin /tmp/output/legacy_image-debug.bin 
+    - name: Build with Python on release (legacy)
+      run: python3 build.py --norun
+    - name: Move release artifact
+      run: mv build/target/target/release/bootimage-unified_os.bin /tmp/output/legacy_image-release.bin 
+    - name: Move logs
+      run: mv logs /tmp/output/legacy_logs
+    - name: Clean env
+      run: python3 build.py clean
+    - name: Build with Python on debug (efi)
+      run: python3 build.py --debug --nodebugconsole --norun efi
+    - name: Move artifacts
+      run: mkdir /tmp/output/efi-debug && mv build/image/target/*-linux-gnu/debug/build/unified_os_boot-*/out/*.img /tmp/output/efi-debug
+    - name: Build with Python on release (efi)
+      run: python3 build.py --norun efi
+    - name: Move artifacts
+      run: mkdir /tmp/output/efi-release && mv build/image/target/*-linux-gnu/release/build/unified_os_boot-*/out/*.img /tmp/output/efi-release
+    - name: Tarballing artifacts
+      run: tar cJf /tmp/output.tar.xz /tmp/output
+    - name: Uploading data
+      uses: actions/upload-artifact@v3.1.2
+      with:
+        name: build-data.tar.xz
+        path: /tmp/output.tar.xz
+        if-no-files-found: error
+        retention-days: 30
+    
