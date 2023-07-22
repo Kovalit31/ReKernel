@@ -14,8 +14,8 @@ from argparse import ArgumentParser
 
 # Versions
 MAJOR_VER = 0
-MINOR_VER = 1
-PATCH_LEVEL = 2
+MINOR_VER = 2
+PATCH_LEVEL = 0
 EXTRA = "alpha"
 VERSION = ".".join([str(x) for x in [MAJOR_VER, MINOR_VER, PATCH_LEVEL]])+(f"-{EXTRA}" if EXTRA != None else "")
 KERNEL_BRAND = "unified_os"
