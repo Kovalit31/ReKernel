@@ -16,6 +16,7 @@ MINOR_VER = 1
 PATCH_LEVEL = 2
 EXTRA = "alpha"
 VERSION = ".".join([str(x) for x in [MAJOR_VER, MINOR_VER, PATCH_LEVEL]])+(f"-{EXTRA}" if EXTRA != None else "")
+KERNEL_BRAND = "unified_os"
 
 # Runtime folders
 BASE_DIR = os.path.dirname(__file__)
@@ -23,7 +24,7 @@ SCRIPT_DIR = os.path.join(BASE_DIR, "scripts")
 
 # Supported targets/archs
 
-TARGETS = ["clean", "efi", "bios", "legacy"]
+TARGETS = ["clean", "efi", "bios", "legacy", "prepare"]
 ARCHS = ["x86_64"]
 
 DEFAULT_TARGET = 3
@@ -91,6 +92,15 @@ class RecipeNode:
     def execute(self, plus_args: str = None) -> None:
         return execute(self.script, args = self.args if plus_args == None else self.args + plus_args if self.args != None else plus_args, exit_msg = self.exit)
 
+class PythonRecipeNode:
+    def __init__(self, function, *args, **kwargs) -> None:
+        self.function = function
+        self.args = args
+        self.kwargs = kwargs
+    
+    def execute(self) -> None:
+        return self.function(*self.args, **self.kwargs)
+
 class Recipes:
     def __init__(self) -> None:
         self.recipes = dict()
@@ -143,7 +153,7 @@ def posix_inputimeout(prompt='', timeout=30):
 
 def debug_executor(executor):
     def wrap(*args, **kwargs):
-        if DEBUG:
+        if DEBUG and not NO_CONSOLE:
             try:
                 _input = posix_inputimeout(prompt=f"Executor console is ACTIVE\nYou can debug executor with your own commands.\nPress ENTER on {INPUT_TIMEOUT} seconds or skip to continue...", timeout=INPUT_TIMEOUT)
             except TimeoutOccurred:
@@ -285,7 +295,8 @@ def arg_parse():
     parser.add_argument("-v", "--verbose", help="Be verbose", action="store_true")
     parser.add_argument("-d", "--debug", help="Switch into debug configuration", action='store_true')
     parser.add_argument('-n', "--norun", help="Don't run after build", action='store_true')
-    parser.add_argument("--timeout", help="Timeout for input (for debug console)", type=int, default=5, metavar="TIMEOUT")
+    parser.add_argument("--timeout", help="Timeout for input (for debug mode)", type=int, default=5, metavar="TIMEOUT")
+    parser.add_argument("--nodebugconsole", help="Don't start debugging executor (for debug mode)", action="store_true")
     parser.add_argument("--logdir", help="Logging directory", type=str, metavar="LOGDIR", default=os.path.join(BASE_DIR, "logs"))
     parser.add_argument("-a", "--arch", help="Build for ARCH", default=ARCHS[DEFAULT_ARCH], choices=ARCHS, metavar="ARCH")
     args = parser.parse_args()
@@ -298,34 +309,54 @@ def recipe_runner(recipe_list: list[RecipeNode]):
 if __name__ != "__main__":
     exit()
 
+# Python recipes
+
+def set_path(target: str) -> None:
+    if not target in ["efi", "bios"]:
+        return
+    workdir = os.path.join(BASE_DIR, "build")
+    build_rs = os.path.join(workdir, "image", "build.rs")
+    data = "".join(read(build_rs))
+    if data.startswith("const PATH: &str"):
+        return
+    data = "const PATH: &str = \"" + os.path.join(workdir, "kernel", "target", "target", "debug" if DEBUG else "release", KERNEL_BRAND) + "\";\n" + data
+    write(build_rs, data)
+
 args = arg_parse()
 logdir = args.logdir
+arch = args.arch
+target = args.target
+norun = args.norun
 
 global DEBUG
 global VERBOSE
 global INPUT_TIMEOUT
 global GLOBAL_LOG
 global SCRIPT_LOG
+global NO_CONSOLE
 
 DEBUG = args.debug
 VERBOSE = args.verbose
 INPUT_TIMEOUT = args.timeout
 GLOBAL_LOG = LogFile(os.path.join(logdir, f'{time.strftime("%Y-%m-%d %H:%M:%S")}.log'))
 SCRIPT_LOG = LogFile(os.path.join(logdir, 'script_logger.log'), parent=GLOBAL_LOG)
+NO_CONSOLE = args.nodebugconsole
 
 if not check_sys() and not DEBUG:
     printf('Program can\'t be run on non-linux os!', level='f')
 
 # Inititalize recipes
-RECIPE_BUILD__PREPARE = RecipeNode("build/prepare", f"{args.arch} {args.target}")
+RECIPE_BUILD__PREPARE = RecipeNode("build/prepare", f"{arch} {target}")
 RECIPE_BUILD__CLEAN = RecipeNode("build/clean", f"{logdir}")
 RECIPE_BUILD__BUILD = RecipeNode("build/build", "release" if not DEBUG else "debug")
+RECIPE_BUILD__IMAGE = RecipeNode("build/image", "release" if not DEBUG else "debug")
 RECIPE_BUILD__RUN = RecipeNode("build/run", "release" if not DEBUG else "debug")
 RECIPE_BUILD_SYS_INSTALL__RUSTUP = RecipeNode("build_sys_install/rustup", None)
 RECIPE_BUILD_SYS_INSTALL__COMPONENTS = RecipeNode("build_sys_install/components", None)
-RECIPE_BUILD_SYS_INSTALL__TOOLCHAIN = RecipeNode("build_sys_install/toolchain", f"{args.arch}")
+RECIPE_BUILD_SYS_INSTALL__TOOLCHAIN = RecipeNode("build_sys_install/toolchain", f"{arch}")
 RECIPE_CORE__CMD_CHK = RecipeNode("core/cmd_chk", None) # NOTE Use it with additional args
 RECIPE_EXAMPLE = RecipeNode("example", None) # NOTE It's just a example
+PYTHON_TEST = PythonRecipeNode(set_path, target)
 
 # Load recipes
 recipes = Recipes()
@@ -335,11 +366,29 @@ recipes.load_recipe(RECIPE_BUILD_SYS_INSTALL__RUSTUP, "build")
 recipes.load_recipe(RECIPE_BUILD_SYS_INSTALL__TOOLCHAIN, "build")
 recipes.load_recipe(RECIPE_BUILD_SYS_INSTALL__COMPONENTS, "build")
 recipes.load_recipe(RECIPE_BUILD__BUILD, "build")
-recipes.load_recipe(RECIPE_BUILD__RUN, "build") if not args.norun else do_nothing()
+recipes.load_recipe(PYTHON_TEST, "build")
+recipes.load_recipe(RECIPE_BUILD__IMAGE, "build")
+recipes.load_recipe(RECIPE_BUILD__RUN, "build") if not norun else do_nothing()
 
 # Duplicate build group as base of other builds
 for x in TARGETS:
-    if x != "clean":
+    if x != "clean" and x != "prepare":
         recipes.recipes[x] = recipes.get_recipe_group("build")
+        
+if DEBUG:
+    if target == "prepare":
+        try:
+            _target = posix_inputimeout("Target: ")
+            if not _target.lower().strip() in TARGETS:
+                raise TimeoutOccurred
+        except TimeoutOccurred:
+            _target = TARGETS[DEFAULT_TARGET]
+        recipes.load_recipe(RecipeNode("build/prepare", f"{arch} {_target}"), "prepare")
+    
 
-recipe_runner(recipes.get_recipe_group(args.target))
+if not DEBUG:
+    if target == "prepare":
+        printf("Preparing is available only in DEBUG for development purposes.\nPlease rerun with --debug flag!", level='f')
+
+
+recipe_runner(recipes.get_recipe_group(target))

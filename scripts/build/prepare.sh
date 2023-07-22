@@ -29,6 +29,7 @@ main() {
         log "Build dir already exists, skipping..."
     fi
     cd "$BASEDIR/build"
+    # LEGACY
     if [ "$2" == "legacy" ]; then
         if [ ! -f "Cargo.toml" ]; then
             cp "configs/$2/$1/cargo.toml" Cargo.toml
@@ -42,16 +43,18 @@ main() {
         if [ ! -f "target.json" ]; then
             cp "configs/all/$1/target.json" .
         fi
-        exit
+        exit 0
     fi
+    # DEFAULT
     if [ ! -d "kernel" ]; then
         if [ ! -d "boot_target" ] || [ ! -d "kernel_patch" ]; then
             fatal "No necessary dir found, abort"
         fi
         mkdir kernel
         mv src/ build.rs kernel/
-        mv boot_target src
-        mv src/build.rs .
+        mkdir image
+        mv boot_target image/src
+        mv image/src/build.rs image/
         mv kernel_patch/main.rs kernel/src
     fi
     if [ ! -d "kernel/.cargo" ]; then
@@ -66,17 +69,18 @@ main() {
     if [ ! -f "kernel/target.json" ]; then
         cp "configs/all/$1/target.json" "kernel/"
     fi
-    if [ ! -f "Cargo.toml" ]; then
-        cp "configs/$2/$1/cargo.toml" Cargo.toml
+    if [ ! -f "image/Cargo.toml" ]; then
+        cp "configs/$2/$1/cargo.toml" image/Cargo.toml
     fi
-    if [ ! -d ".cargo" ]; then
-        mkdir .cargo
+    if [ ! -d "image/.cargo" ]; then
+        mkdir image/.cargo
     fi
-    if [ ! -f ".cargo/config.toml" ]; then
-        cp "configs/$2/$1/config.toml" .cargo/config.toml
+    if [ ! -f "image/.cargo/config.toml" ]; then
+        cp "configs/$2/$1/config.toml" image/.cargo/config.toml
     fi
-    if [ ! -f "target.json" ]; then
-        cp "configs/all/$1/target.json" target.json
+    if [ ! -f "image/target.json" ] || [ ! -f "kernel/target.json" ]; then
+        cp "configs/all/$1/target.json" image/target.json
+        cp "configs/all/$1/target.json" kernel/target.json
     fi
 }
 

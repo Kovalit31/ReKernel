@@ -6,7 +6,7 @@ LOGGER="$3"
 
 # Logger
 log() {
-    ( echo -e "\n$1" | tee -a -i $LOGGER ) > /dev/null
+    (echo -e "\n$1" | tee -a -i $LOGGER) > /dev/null
 }
 
 exec_log() {
@@ -25,14 +25,18 @@ main() {
     cd "$BASEDIR/build"
     if [ "$1" == "debug" ]; then
         if [ -d "kernel" ]; then
-            cd kernel/
+            cd image/
+            exec_log "Image build failed!" cargo build
+            exit 0
         fi
-        exec_log "Build failed!" cargo build
+        exec_log "Bootimage create failed!" cargo bootimage
     else
         if [ -d "kernel" ]; then
-            cd kernel/
+            cd image/
+            exec_log "Image build failed!" cargo build --release
+            exit 0
         fi
-        exec_log "Build failed!" cargo build --release
+        exec_log "Bootimage create failed!" cargo bootimage --release
     fi
 }
 

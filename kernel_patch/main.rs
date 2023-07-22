@@ -25,4 +25,4 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     loop {}
 }
 
-entry_point!(kernel_start)
+entry_point!(kernel_main);

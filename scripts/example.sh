@@ -10,7 +10,7 @@ log() {
 }
 
 exec_log() {
-    $@ > >( tee -a -i "$LOGGER" ) 2>&1
+    ( ${@:2} || fatal "$1" ) > >( tee -a -i "$LOGGER" ) 2>&1
 }
 
 # Fatal trap. CAUTION: Kills parrent and stop executing!
@@ -22,7 +22,7 @@ fatal() {
 
 # Lifecycle
 main() {
-    exec_log echo "Hello world!"
+    exec_log "It can't be raised! ._." echo "Hello world!"
 }
 
 # Call (May use additional arguments)
