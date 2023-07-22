@@ -25,7 +25,10 @@ main() {
     if [ -d "$BASEDIR/build" ]; then
         rm -rf "$BASEDIR/build"
     fi
+    if [ -d "$1" ]; then
+        rm -rf "$1"
+    fi
 }
 
 # Call (May use additional arguments)
-main
+main "$4"

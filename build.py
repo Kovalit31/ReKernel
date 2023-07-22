@@ -21,6 +21,14 @@ VERSION = ".".join([str(x) for x in [MAJOR_VER, MINOR_VER, PATCH_LEVEL]])+(f"-{E
 BASE_DIR = os.path.dirname(__file__)
 SCRIPT_DIR = os.path.join(BASE_DIR, "scripts")
 
+# Supported targets/archs
+
+TARGETS = ["clean", "efi", "bios", "legacy"]
+ARCHS = ["x86_64"]
+
+DEFAULT_TARGET = 3
+DEFAULT_ARCH = 0 # TODO Create func, what detects arch
+
 class ExecutingInterrupt:
     '''
     Configurable script interrupt handler
@@ -74,16 +82,51 @@ class LogFile:
         remove(self.path)
         del(self)
 
+class RecipeNode:
+    def __init__(self, script: str, args: str, exit_msg: str = None) -> None:
+        self.script = script
+        self.args = args
+        self.exit = exit_msg
+    
+    def execute(self, plus_args: str = None) -> None:
+        return execute(self.script, args = self.args if plus_args == None else self.args + plus_args if self.args != None else plus_args, exit_msg = self.exit)
+
+class Recipes:
+    def __init__(self) -> None:
+        self.recipes = dict()
+    
+    def load_recipe(self, recipe: RecipeNode, group: str) -> int:
+        '''
+        Loads recipe type RecipeNode and return index in group
+        '''
+        self.recipes[group].append(recipe) if group in (lambda diction: [ x for x in diction.keys() ])(self.recipes) else self.recipes.update({group: [recipe]})
+        return self.recipes[group].index(recipe)
+    
+    def unload_recipe(self, group: str, index: int) -> None:
+        if not group in (lambda diction: [ x for x in diction.keys() ])(self.recipes):
+            return
+        self.recipes[group].pop(index)
+        if len(self.recipes[group]) == 0:
+            self.recipes.pop(group)
+
+    def get_recipes(self) -> list[str]:
+        return (lambda diction: [ x for x in diction.keys() ])(self.recipes)
+    
+    def get_recipe_group(self, group: str) -> list[RecipeNode]:
+        if not group in (lambda diction: [ x for x in diction.keys() ])(self.recipes):
+            return []
+        return self.recipes[group]
+    
 # Thanks for inputimeout project
 class TimeoutOccurred(Exception):
     pass
 
-def echo(string):
+def _raw_print(string):
     sys.stdout.write(string)
     sys.stdout.flush()
 
 def posix_inputimeout(prompt='', timeout=30):
-    echo(prompt)
+    _raw_print(prompt)
     sel = selectors.DefaultSelector()
     sel.register(sys.stdin, selectors.EVENT_READ)
     events = sel.select(timeout)
@@ -92,7 +135,7 @@ def posix_inputimeout(prompt='', timeout=30):
         key, _ = events[0]
         return key.fileobj.readline().rstrip("\n")
     else:
-        echo("\n")
+        _raw_print("\n")
         termios.tcflush(sys.stdin, termios.TCIFLUSH)
         raise TimeoutOccurred()
 
@@ -121,6 +164,9 @@ def debug_executor(executor):
 def do_nothing() -> None:
     pass
 
+def check_sys() -> bool:
+    return platform.system().lower().startswith('linux')
+
 def printf(*message, level="i"):
     '''
     Formats message with level.
@@ -140,6 +186,7 @@ def printf(*message, level="i"):
     if _level == 'f':
         raise Exception(string)
 
+# Check paths
 def check_path(path: str) -> bool:
     return os.path.exists(path)
 
@@ -157,9 +204,7 @@ def check_file(path) -> bool:
         return False
     return True
 
-def check_sys() -> bool:
-    return platform.system().lower().startswith('linux')
-
+# rm*
 def remove(path: str, recursive=False) -> None:
     if check_dir(path) and not recursive:
         printf(f"Ommiting {path} because not recursive deletion", level='w')
@@ -175,6 +220,7 @@ def remove(path: str, recursive=False) -> None:
     else:
         shutil.rmtree(path)
 
+# Create file/dir
 def create_file(path: str) -> None:
     if check_dir(path):
         remove(path, recursive=True)
@@ -193,6 +239,7 @@ def create_dir(path: str) -> None:
         return
     os.makedirs(path)
 
+# File I/O
 def write(path: str, data: str, append=False) -> None:
     try:
         create_file(path)
@@ -234,30 +281,19 @@ def execute(script: str, args="", exit_msg=None):
 
 def arg_parse():
     parser =  ArgumentParser(description="Build system for UnOS kernel", epilog="Under GNU v3 Public license. UnOS is not new OS, it is Linux rewrite to Rust")
-    parser.add_argument("target", help="Build terget (clean will clear logs and data)", default="legacy", choices=["legacy", "clean", "efi", "bios"], metavar="TARGET", nargs="?")
+    parser.add_argument("target", help="Build terget (clean will clear logs and data)", metavar="TARGET", nargs="?", default=TARGETS[DEFAULT_TARGET], choices=TARGETS)
     parser.add_argument("-v", "--verbose", help="Be verbose", action="store_true")
     parser.add_argument("-d", "--debug", help="Switch into debug configuration", action='store_true')
     parser.add_argument('-n', "--norun", help="Don't run after build", action='store_true')
     parser.add_argument("--timeout", help="Timeout for input (for debug console)", type=int, default=5, metavar="TIMEOUT")
     parser.add_argument("--logdir", help="Logging directory", type=str, metavar="LOGDIR", default=os.path.join(BASE_DIR, "logs"))
-    parser.add_argument("-a", "--arch", help="Build for ARCH", default="x86_64", choices=["x86_64"], metavar="ARCH")
+    parser.add_argument("-a", "--arch", help="Build for ARCH", default=ARCHS[DEFAULT_ARCH], choices=ARCHS, metavar="ARCH")
     args = parser.parse_args()
     return args
 
-def clean(logdir=None):
-    execute("build/clean")
-    remove(logdir, recursive=True) if logdir != None else do_nothing()
-    sys.exit(0)
-
-def build(arch: str, target: str, norun=False) -> None:
-    execute("build/prepare", args=f"\"{arch}\" \"{target}\"")
-    execute("build_sys_install/rustup")
-    execute("build_sys_install/toolchain", args=f"{arch}")
-    execute("build_sys_install/components")
-    execute("build/build", args=f"{'release' if not DEBUG else 'debug'}")
-    if norun:
-        return
-    execute("build/run", args=f"{'release' if not DEBUG else 'debug'}")
+def recipe_runner(recipe_list: list[RecipeNode]):
+    for x in recipe_list:
+        x.execute()
 
 if __name__ != "__main__":
     exit()
@@ -280,9 +316,30 @@ SCRIPT_LOG = LogFile(os.path.join(logdir, 'script_logger.log'), parent=GLOBAL_LO
 if not check_sys() and not DEBUG:
     printf('Program can\'t be run on non-linux os!', level='f')
 
-if args.target == "clean":
-    clean(logdir=logdir)
-else:
-    if args.target != "legacy":
-        printf(f"Feature {args.target} is unstable! There may be bugs with compiling!", level='w')
-    build(args.arch, args.target, norun=args.norun)
+# Inititalize recipes
+RECIPE_BUILD__PREPARE = RecipeNode("build/prepare", f"{args.arch} {args.target}")
+RECIPE_BUILD__CLEAN = RecipeNode("build/clean", f"{logdir}")
+RECIPE_BUILD__BUILD = RecipeNode("build/build", "release" if not DEBUG else "debug")
+RECIPE_BUILD__RUN = RecipeNode("build/run", "release" if not DEBUG else "debug")
+RECIPE_BUILD_SYS_INSTALL__RUSTUP = RecipeNode("build_sys_install/rustup", None)
+RECIPE_BUILD_SYS_INSTALL__COMPONENTS = RecipeNode("build_sys_install/components", None)
+RECIPE_BUILD_SYS_INSTALL__TOOLCHAIN = RecipeNode("build_sys_install/toolchain", f"{args.arch}")
+RECIPE_CORE__CMD_CHK = RecipeNode("core/cmd_chk", None) # NOTE Use it with additional args
+RECIPE_EXAMPLE = RecipeNode("example", None) # NOTE It's just a example
+
+# Load recipes
+recipes = Recipes()
+recipes.load_recipe(RECIPE_BUILD__CLEAN, "clean")
+recipes.load_recipe(RECIPE_BUILD__PREPARE, "build")
+recipes.load_recipe(RECIPE_BUILD_SYS_INSTALL__RUSTUP, "build")
+recipes.load_recipe(RECIPE_BUILD_SYS_INSTALL__TOOLCHAIN, "build")
+recipes.load_recipe(RECIPE_BUILD_SYS_INSTALL__COMPONENTS, "build")
+recipes.load_recipe(RECIPE_BUILD__BUILD, "build")
+recipes.load_recipe(RECIPE_BUILD__RUN, "build") if not args.norun else do_nothing()
+
+# Duplicate build group as base of other builds
+for x in TARGETS:
+    if x != "clean":
+        recipes.recipes[x] = recipes.get_recipe_group("build")
+
+recipe_runner(recipes.get_recipe_group(args.target))
