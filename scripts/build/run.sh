@@ -11,14 +11,14 @@ main() {
     cd "$BASEDIR/build"
     if [ "$1" == "debug" ]; then
         cd kernel/
-        if [ -d "image/" ]; then
-            cd image/
+        if [ -d "../image/" ]; then
+            cd ../image/
         fi
         + "Error while running!" cargo run
     else
         cd kernel/
-        if [ -d "image/" ]; then
-            cd image/
+        if [ -d "../image/" ]; then
+            cd ../image/
         fi
         + "Error while running!" cargo run --release
     fi
