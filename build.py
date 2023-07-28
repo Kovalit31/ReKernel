@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import re
 import selectors
 import signal
 import sys
@@ -13,8 +14,8 @@ from argparse import ArgumentParser
 
 # Versions
 MAJOR_VER = 0
-MINOR_VER = 1
-PATCH_LEVEL = 2
+MINOR_VER = 2
+PATCH_LEVEL = 0
 EXTRA = "alpha"
 VERSION = ".".join([str(x) for x in [MAJOR_VER, MINOR_VER, PATCH_LEVEL]])+(f"-{EXTRA}" if EXTRA != None else "")
 KERNEL_BRAND = "unified_os"
@@ -24,12 +25,11 @@ BASE_DIR = os.path.dirname(__file__)
 SCRIPT_DIR = os.path.join(BASE_DIR, "scripts")
 
 # Supported targets/archs
-
+ARCH_RE = ["i.86/x86", "x86_64/x86_64", "sun4u/sparc64", "arm.*/arm", "sa110/arm", "s390x/s390", "ppc.*/powerpc", "mips.*/mips", "sh[234].*/sh", "aarch64.*/arm64", "riscv.*/riscv", "loongarch.*/loongarch"]
 TARGETS = ["clean", "efi", "bios", "legacy", "prepare"]
 ARCHS = ["x86_64"]
 
 DEFAULT_TARGET = 3
-DEFAULT_ARCH = 0 # TODO Create func, what detects arch
 
 class ExecutingInterrupt:
     '''
@@ -178,6 +178,13 @@ def do_nothing() -> None:
 def check_sys() -> bool:
     return platform.system().lower().startswith('linux')
 
+def get_arch() -> str:
+    arch = platform.machine()
+    for x in ARCH_RE:
+        pattern, repl = x.split("/")
+        arch = re.sub(pattern, repl, arch)
+    return arch
+
 def printf(*message, level="i"):
     '''
     Formats message with level.
@@ -301,7 +308,7 @@ def arg_parse():
     parser.add_argument("--timeout", help="Timeout for input (for debug mode)", type=int, default=5, metavar="TIMEOUT")
     parser.add_argument("--nodebugconsole", help="Don't start debugging executor (for debug mode)", action="store_true")
     parser.add_argument("--logdir", help="Logging directory", type=str, metavar="LOGDIR", default=os.path.join(BASE_DIR, "logs"))
-    parser.add_argument("-a", "--arch", help="Build for ARCH", default=ARCHS[DEFAULT_ARCH], choices=ARCHS, metavar="ARCH")
+    # parser.add_argument("-a", "--arch", help="Build for ARCH", default=ARCHS[DEFAULT_ARCH], choices=ARCHS, metavar="ARCH") # NOTE Can't use, while not cross-compilator
     args = parser.parse_args()
     return args
 
@@ -327,7 +334,7 @@ def set_path(target: str) -> None:
 
 args = arg_parse()
 logdir = args.logdir
-arch = args.arch
+arch = get_arch()
 target = args.target
 norun = args.norun
 
@@ -347,6 +354,11 @@ NO_CONSOLE = args.nodebugconsole
 
 if not check_sys() and not DEBUG:
     printf('Program can\'t be run on non-linux os!', level='f')
+
+print(arch) if DEBUG else do_nothing()
+
+if not arch in ARCHS:
+    printf("Compilation haven't supported yet on this arch!", level='f')
 
 # Inititalize recipes
 RECIPE_BUILD__PREPARE = RecipeNode("build/prepare", f"{arch} {target}")

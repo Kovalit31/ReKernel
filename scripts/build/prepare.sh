@@ -5,17 +5,7 @@ BASEDIR="$2"
 LOGGER="$3"
 
 
-# Logger
-log() {
-    ( echo -e "\n$1" | tee -a -i $LOGGER ) > /dev/null
-}
-
-# Fatal trap. CAUTION: Kills parrent and stop executing!
-fatal() {
-    log "$1"
-    kill -SIGTERM $PARENT_PID
-    exit 1
-}
+. $BASEDIR/scripts/core/lib.sh
 
 # Lifecycle
 main() {
@@ -29,33 +19,9 @@ main() {
         log "Build dir already exists, skipping..."
     fi
     cd "$BASEDIR/build"
-    # LEGACY
-    if [ "$2" == "legacy" ]; then
-        if [ ! -f "Cargo.toml" ]; then
-            cp "configs/$2/$1/cargo.toml" Cargo.toml
-        fi
-        if [ ! -d ".cargo" ]; then
-            mkdir .cargo
-        fi
-        if [ ! -f ".cargo/config.toml" ]; then
-            cp "configs/$2/$1/config.toml" .cargo
-        fi
-        if [ ! -f "target.json" ]; then
-            cp "configs/all/$1/target.json" .
-        fi
-        exit 0
-    fi
     # DEFAULT
     if [ ! -d "kernel" ]; then
-        if [ ! -d "boot_target" ] || [ ! -d "kernel_patch" ]; then
-            fatal "No necessary dir found, abort"
-        fi
-        mkdir kernel
-        mv src/ build.rs kernel/
-        mkdir image
-        mv boot_target image/src
-        mv image/src/build.rs image/
-        mv kernel_patch/main.rs kernel/src
+        fatal "No kernel dir found, abort"
     fi
     if [ ! -d "kernel/.cargo" ]; then
         mkdir kernel/.cargo
@@ -69,6 +35,11 @@ main() {
     if [ ! -f "kernel/target.json" ]; then
         cp "configs/all/$1/target.json" "kernel/"
     fi
+    if [ "$2" == "legacy" ]; then
+        rm -rf image/
+        exit 0
+    fi
+    mv kernel/patch/* kernel/src
     if [ ! -f "image/Cargo.toml" ]; then
         cp "configs/$2/$1/cargo.toml" image/Cargo.toml
     fi

@@ -26,11 +26,11 @@ jobs:
     - name: Build with Python on debug (legacy)
       run: python3 build.py --debug --nodebugconsole --norun
     - name: Move debug artifact
-      run: mv build/target/target/debug/bootimage-unified_os.bin /tmp/output/legacy_image-debug.bin 
+      run: mv build/kernel/target/target/debug/bootimage-unified_os.bin /tmp/output/legacy_image-debug.bin 
     - name: Build with Python on release (legacy)
       run: python3 build.py --norun
     - name: Move release artifact
-      run: mv build/target/target/release/bootimage-unified_os.bin /tmp/output/legacy_image-release.bin 
+      run: mv build/kernel/target/target/release/bootimage-unified_os.bin /tmp/output/legacy_image-release.bin 
     - name: Move logs
       run: mv logs /tmp/output/legacy_logs
     - name: Clean env
