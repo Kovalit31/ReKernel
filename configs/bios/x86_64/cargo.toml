@@ -1,5 +1,5 @@
 [package]
-name = "unified_os_boot"         # or any other name
+name = "rekernel_image"         # or any other name
 version = "0.1.0"
 
 [build-dependencies]

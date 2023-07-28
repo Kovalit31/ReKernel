@@ -300,7 +300,7 @@ def execute(script: str, args="", exit_msg=None):
         printf(f"Error occured at {script}\n{logs}" if exit_msg == None else exit_msg, level='f')
 
 def arg_parse():
-    parser =  ArgumentParser(description="Build system for UnOS kernel", epilog="Under GNU v3 Public license. UnOS is not new OS, it is Linux rewrite to Rust")
+    parser =  ArgumentParser(description="Build system for ReKernel", epilog="Under GNU v3 Public license. ReKernel is not new kernel, it is Linux kernel rewrite to Rust with some improvements")
     parser.add_argument("target", help="Build terget (clean will clear logs and data)", metavar="TARGET", nargs="?", default=TARGETS[DEFAULT_TARGET], choices=TARGETS)
     parser.add_argument("-v", "--verbose", help="Be verbose", action="store_true")
     parser.add_argument("-d", "--debug", help="Switch into debug configuration", action='store_true')
