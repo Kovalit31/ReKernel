@@ -18,7 +18,7 @@ MINOR_VER = 2
 PATCH_LEVEL = 0
 EXTRA = "alpha"
 VERSION = ".".join([str(x) for x in [MAJOR_VER, MINOR_VER, PATCH_LEVEL]])+(f"-{EXTRA}" if EXTRA != None else "")
-KERNEL_BRAND = "unified_os"
+KERNEL_BRAND = "rekernel"
 
 # Runtime folders
 BASE_DIR = os.path.dirname(__file__)
@@ -26,7 +26,7 @@ SCRIPT_DIR = os.path.join(BASE_DIR, "scripts")
 
 # Supported targets/archs
 ARCH_RE = ["i.86/x86", "x86_64/x86_64", "sun4u/sparc64", "arm.*/arm", "sa110/arm", "s390x/s390", "ppc.*/powerpc", "mips.*/mips", "sh[234].*/sh", "aarch64.*/arm64", "riscv.*/riscv", "loongarch.*/loongarch"]
-TARGETS = ["clean", "efi", "bios", "legacy", "prepare"]
+TARGETS = ["clean", "kernel", "image", "legacy", "prepare"]
 ARCHS = ["x86_64"]
 
 DEFAULT_TARGET = 3
@@ -300,7 +300,7 @@ def execute(script: str, args="", exit_msg=None):
         printf(f"Error occured at {script}\n{logs}" if exit_msg == None else exit_msg, level='f')
 
 def arg_parse():
-    parser =  ArgumentParser(description="Build system for UnOS kernel", epilog="Under GNU v3 Public license. UnOS is not new OS, it is Linux rewrite to Rust")
+    parser =  ArgumentParser(description="Build system for ReKernel", epilog="Under GNU v3 Public license. ReKernel is not new kernel, it is Linux kernel rewrite to Rust with some improvements")
     parser.add_argument("target", help="Build terget (clean will clear logs and data)", metavar="TARGET", nargs="?", default=TARGETS[DEFAULT_TARGET], choices=TARGETS)
     parser.add_argument("-v", "--verbose", help="Be verbose", action="store_true")
     parser.add_argument("-d", "--debug", help="Switch into debug configuration", action='store_true')
@@ -371,7 +371,7 @@ RECIPE_BUILD_SYS_INSTALL__COMPONENTS = RecipeNode("build_sys_install/components"
 RECIPE_BUILD_SYS_INSTALL__TOOLCHAIN = RecipeNode("build_sys_install/toolchain", f"{arch}")
 RECIPE_CORE__CMD_CHK = RecipeNode("core/cmd_chk", None) # NOTE Use it with additional args
 RECIPE_EXAMPLE = RecipeNode("example", None) # NOTE It's just a example
-PYTHON_TEST = PythonRecipeNode(set_path, target)
+PYTHON_BUILD__PREIMAGE = PythonRecipeNode(set_path, target)
 
 # Load recipes
 recipes = Recipes()
@@ -381,17 +381,19 @@ recipes.load_recipe(RECIPE_BUILD_SYS_INSTALL__RUSTUP, "build")
 recipes.load_recipe(RECIPE_BUILD_SYS_INSTALL__TOOLCHAIN, "build")
 recipes.load_recipe(RECIPE_BUILD_SYS_INSTALL__COMPONENTS, "build")
 recipes.load_recipe(RECIPE_BUILD__BUILD, "build")
-recipes.load_recipe(PYTHON_TEST, "build")
-recipes.load_recipe(RECIPE_BUILD__IMAGE, "build")
-runner = recipes.load_recipe(RECIPE_BUILD__RUN, "build") if not norun else do_nothing()
 
 # Duplicate build group as base of other builds
 for x in TARGETS:
     if x != "clean" and x != "prepare":
         recipes.recipes[x] = copy.deepcopy(recipes.get_recipe_group("build"))
-        if x != "legacy" and not norun:
-            recipes.unload_recipe(x, runner) # Unsupported
         
+recipes.load_recipe(PYTHON_BUILD__PREIMAGE, "image")
+recipes.load_recipe(RECIPE_BUILD__IMAGE, "image")
+
+for y in TARGETS:
+    if y != "clean" and y != "prepare" and y != "kernel":
+        recipes.load_recipe(RECIPE_BUILD__RUN, y) if not norun else do_nothing()
+
 if DEBUG:
     if target == "prepare":
         try:
