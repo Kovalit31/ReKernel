@@ -26,7 +26,7 @@ SCRIPT_DIR = os.path.join(BASE_DIR, "scripts")
 
 # Supported targets/archs
 ARCH_RE = ["i.86/x86", "x86_64/x86_64", "sun4u/sparc64", "arm.*/arm", "sa110/arm", "s390x/s390", "ppc.*/powerpc", "mips.*/mips", "sh[234].*/sh", "aarch64.*/arm64", "riscv.*/riscv", "loongarch.*/loongarch"]
-TARGETS = ["clean", "efi", "bios", "legacy", "prepare"]
+TARGETS = ["clean", "kernel", "image", "legacy", "prepare"]
 ARCHS = ["x86_64"]
 
 DEFAULT_TARGET = 3
@@ -371,7 +371,7 @@ RECIPE_BUILD_SYS_INSTALL__COMPONENTS = RecipeNode("build_sys_install/components"
 RECIPE_BUILD_SYS_INSTALL__TOOLCHAIN = RecipeNode("build_sys_install/toolchain", f"{arch}")
 RECIPE_CORE__CMD_CHK = RecipeNode("core/cmd_chk", None) # NOTE Use it with additional args
 RECIPE_EXAMPLE = RecipeNode("example", None) # NOTE It's just a example
-PYTHON_TEST = PythonRecipeNode(set_path, target)
+PYTHON_BUILD__PREIMAGE = PythonRecipeNode(set_path, target)
 
 # Load recipes
 recipes = Recipes()
@@ -381,17 +381,19 @@ recipes.load_recipe(RECIPE_BUILD_SYS_INSTALL__RUSTUP, "build")
 recipes.load_recipe(RECIPE_BUILD_SYS_INSTALL__TOOLCHAIN, "build")
 recipes.load_recipe(RECIPE_BUILD_SYS_INSTALL__COMPONENTS, "build")
 recipes.load_recipe(RECIPE_BUILD__BUILD, "build")
-recipes.load_recipe(PYTHON_TEST, "build")
-recipes.load_recipe(RECIPE_BUILD__IMAGE, "build")
-runner = recipes.load_recipe(RECIPE_BUILD__RUN, "build") if not norun else do_nothing()
 
 # Duplicate build group as base of other builds
 for x in TARGETS:
     if x != "clean" and x != "prepare":
         recipes.recipes[x] = copy.deepcopy(recipes.get_recipe_group("build"))
-        if x != "legacy" and not norun:
-            recipes.unload_recipe(x, runner) # Unsupported
         
+recipes.load_recipe(PYTHON_BUILD__PREIMAGE, "image")
+recipes.load_recipe(RECIPE_BUILD__IMAGE, "image")
+
+for y in TARGETS:
+    if y != "clean" and y != "prepare" and y != "kernel":
+        recipes.load_recipe(RECIPE_BUILD__RUN, y) if not norun else do_nothing()
+
 if DEBUG:
     if target == "prepare":
         try:
