@@ -18,7 +18,7 @@ MINOR_VER = 2
 PATCH_LEVEL = 0
 EXTRA = "alpha"
 VERSION = ".".join([str(x) for x in [MAJOR_VER, MINOR_VER, PATCH_LEVEL]])+(f"-{EXTRA}" if EXTRA != None else "")
-KERNEL_BRAND = "unified_os"
+KERNEL_BRAND = "rekernel"
 
 # Runtime folders
 BASE_DIR = os.path.dirname(__file__)
