@@ -30,6 +30,7 @@ TARGETS = ["clean", "kernel", "image", "legacy", "prepare"]
 ARCHS = ["x86_64"]
 
 DEFAULT_TARGET = 3
+PREIMAGE = TARGETS[1:3]
 
 class ExecutingInterrupt:
     '''
@@ -322,7 +323,7 @@ if __name__ != "__main__":
 # Python recipes
 
 def set_path(target: str) -> None:
-    if not target in ["efi", "bios"]:
+    if not target in PREIMAGE:
         return
     workdir = os.path.join(BASE_DIR, "build")
     build_rs = os.path.join(workdir, "image", "build.rs")
@@ -386,6 +387,8 @@ recipes.load_recipe(RECIPE_BUILD__BUILD, "build")
 for x in TARGETS:
     if x != "clean" and x != "prepare":
         recipes.recipes[x] = copy.deepcopy(recipes.get_recipe_group("build"))
+        if x != "image":
+            recipes.recipes[x].append(RECIPE_BUILD__IMAGE)
         
 recipes.load_recipe(PYTHON_BUILD__PREIMAGE, "image")
 recipes.load_recipe(RECIPE_BUILD__IMAGE, "image")
