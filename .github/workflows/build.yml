@@ -38,11 +38,11 @@ jobs:
     - name: Build with Python on debug (image)
       run: python3 build.py --debug --nodebugconsole --norun image
     - name: Move artifacts
-      run: mkdir /tmp/output/efi-debug && mv build/image/target/*-linux-gnu/debug/build/rekernel_image-*/out/*.img /tmp/output/image-debug
+      run: mkdir /tmp/output/image-debug && mv build/image/target/*-linux-gnu/debug/build/rekernel_image-*/out/*.img /tmp/output/image-debug
     - name: Build with Python on release (image)
       run: python3 build.py --norun image
     - name: Move artifacts
-      run: mkdir /tmp/output/efi-release && mv build/image/target/*-linux-gnu/release/build/rekernel_image-*/out/*.img /tmp/output/image-release
+      run: mkdir /tmp/output/image-release && mv build/image/target/*-linux-gnu/release/build/rekernel_image-*/out/*.img /tmp/output/image-release
     - name: Tarballing artifacts
       run: tar cJf /tmp/output.tar.xz /tmp/output
     - name: Uploading data
