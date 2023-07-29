@@ -14,9 +14,6 @@ main() {
     if [ -d "$1" ]; then
         + "Can't remove logs!" rm -rf "$1"
     fi
-    if [ -d "$1" ]; then
-        rm -rf "$1"
-    fi
 }
 
 # Call (May use additional arguments)
