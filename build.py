@@ -54,36 +54,70 @@ class ExecutingInterrupt:
         signal.signal(signal.SIGINT, self.old_sigint)
         signal.signal(signal.SIGTERM, self.old_sigterm)
 
-class LogFile:
-    def __init__(self, file: str, parent=None) -> None:
-        self.file = file
+class File:
+    def __init__(self, path: str) -> None:
+        self.path = path
+        if not os.path.exists(os.path.dirname(path)):
+            os.makedirs(os.path.dirname(path))
+        if not os.path.exists(self.path):
+            self.clear()
+        if os.path.isdir(os.path.realpath(self.path)):
+            printf("Path is dir, cannot use it as file!", level='f')
+    
+    def read(self) -> list:
+        try:
+            file = open(self.path, "r", encoding="utf-8")
+            data = file.readlines()
+            file.close()
+            return data
+        except:
+            return ""
+    
+    def write(self, data, append=True) -> None:
+        try:
+            file = open(self.path, "w" if not append else "a", encoding="utf-8")
+            file.write("".join(data) if type(data) == list else data if type(data) == str else str(data))
+            file.close()
+        except:
+            return
+    
+    def remove(self) -> None:
+        os.remove(self.path)
+        del(self)
+    
+    def clear(self) -> None:
+        self.write("", append=False)
+
+class Directory:
+    def __init__(self, path: str) -> None:
+        self.path = path
+        if not os.path.exists(path):
+            os.makedirs(path)
+        if os.path.isfile(path):
+            printf("Path is file, cannot use it as dir!", level='f')
+    
+    def content(self) -> list:
+        return os.listdir(self.path)
+    
+    def remove(self) -> None:
+        shutil.rmtree(self.path)
+
+class LogFile(File):
+    def __init__(self, path: str, parent=None) -> None:
+        super().__init__(path)
         self.have_parent = parent != None
         self.parent = parent
-        if not check_dir(os.path.dirname(file)):
-            create_dir(os.path.dirname(file))
-        if not check_path(file):
-            create_file(file)
-            self.clear()
-        if not check_file(file):
-            printf(f"Given path '{file}' is not a file!", level='f')
         if type(parent) != type(self) and parent != None:
             printf(f"Parent log is not a LogFile object!", level='f')
 
-    def read(self) -> str:
-        return "".join(read(self.file)).rstrip()
+    def read_log(self) -> str:
+        return "".join(self.read()).rstrip()
 
-    def write(self, data: str) -> None:
-        write(self.file, f'\n[{time.strftime("%Y-%m-%d %H:%M:%S")} ({time.process_time()} from start)] ' + data.replace("\n\n", "\n").rstrip().replace("\n", f'\n[{time.strftime("%Y-%m-%d %H:%M:%S")} ({time.process_time()} from start)] '), append=True)
-
-    def clear(self) -> None:
-        write(self.file, "# START OF LOGGING\n", append=False)
+    def write_log(self, data: str) -> None:
+        self.write(f'\n[{time.strftime("%Y-%m-%d %H:%M:%S")} ({time.process_time()} from start)] ' + data.replace("\n\n", "\n").rstrip().replace("\n", f'\n[{time.strftime("%Y-%m-%d %H:%M:%S")} ({time.process_time()} from start)] '))
 
     def save_to_parent(self, prevscr: str = None) -> None:
-        self.parent.write(f'Output of {"previous script" if prevscr == None else prevscr}:\n{self.read()}') if self.have_parent else do_nothing()
-
-    def remove(self) -> None:
-        remove(self.path)
-        del(self)
+        self.parent.write_log(f'Output of {"previous script" if prevscr == None else prevscr}:\n{self.read_log()}') if self.have_parent else do_nothing()
 
 class RecipeNode:
     def __init__(self, script: str, args: str, exit_msg: str = None) -> None:
@@ -201,83 +235,11 @@ def printf(*message, level="i"):
         return
     msg = f"[{'*' if _level == 'i' else '!' if _level == 'w' else '@' if _level == 'e' else '~' if _level == 'd' else '.' if _level == 'v' else '&' if _level == 'f' else '?'}] {string}".replace("\n", "\n[`] ")
     print(msg)
-    GLOBAL_LOG.write(msg)
+    GLOBAL_LOG.write_log(msg)
     if _level == 'f':
         if not VERBOSE:
             exit(2)
         raise Exception(string)
-
-# Check paths
-def check_path(path: str) -> bool:
-    return os.path.exists(path)
-
-def check_dir(path: str) -> bool:
-    if not check_path(path):
-        return False
-    if not os.path.isdir(os.path.realpath(path)):
-        return False
-    return True
-
-def check_file(path) -> bool:
-    if not check_path(path):
-        return False
-    if not os.path.isfile(os.path.realpath(path)):
-        return False
-    return True
-
-# rm*
-def remove(path: str, recursive=False) -> None:
-    if check_dir(path) and not recursive:
-        printf(f"Ommiting {path} because not recursive deletion", level='w')
-        return
-    if not check_path(path):
-        printf(f"Path not exists: {path}", level='e')
-        return
-    if not recursive and not check_dir(path):
-        if os.path.islink(path):
-            os.unlink(path)
-        else:
-            os.remove(path)
-    else:
-        shutil.rmtree(path)
-
-# Create file/dir
-def create_file(path: str) -> None:
-    if check_dir(path):
-        remove(path, recursive=True)
-    if check_file(path):
-        return
-    try:
-        file = open(path, "x", encoding="utf-8")
-        file.close()
-    except:
-        return
-
-def create_dir(path: str) -> None:
-    if check_file(path):
-        remove(path)
-    if check_dir(path):
-        return
-    os.makedirs(path)
-
-# File I/O
-def write(path: str, data: str, append=False) -> None:
-    try:
-        create_file(path)
-        file = open(path, "w" if not append else "a", encoding="utf-8")
-        file.write(data)
-        file.close()
-    except:
-        return
-
-def read(path: str) -> list:
-    try:
-        file = open(path, "r", encoding="utf-8")
-        data = file.readlines()
-        file.close()
-        return data
-    except:
-        return ""
 
 @debug_executor
 def execute(script: str, args="", exit_msg=None):
@@ -292,10 +254,10 @@ def execute(script: str, args="", exit_msg=None):
         raise Exception(f"No script found {script}")
     with ExecutingInterrupt() as ei:
         os.system(f"chmod 755 {script}")
-        os.system(f"\"{script}\" {os.getpid()} \"{BASE_DIR}\" \"{SCRIPT_LOG.file}\" {'' if args == None else args if type(args) != list else ' '.join(args)}")
+        os.system(f"\"{script}\" {os.getpid()} \"{BASE_DIR}\" \"{SCRIPT_LOG.path}\" {'' if args == None else args if type(args) != list else ' '.join(args)}")
         interrupt = ei.interrupt
     SCRIPT_LOG.save_to_parent(prevscr=script)
-    logs = SCRIPT_LOG.read()
+    logs = SCRIPT_LOG.read_log()
     SCRIPT_LOG.clear()
     if interrupt:
         printf(f"Error occured at {script}\n{logs}" if exit_msg == None else exit_msg, level='f')
@@ -326,12 +288,12 @@ def set_path(target: str) -> None:
     if not target in PREIMAGE:
         return
     workdir = os.path.join(BASE_DIR, "build")
-    build_rs = os.path.join(workdir, "image", "build.rs")
-    data = "".join(read(build_rs))
+    build_rs = File(os.path.join(workdir, "image", "build.rs"))
+    data = "".join(build_rs.read())
     if data.startswith("const PATH: &str"):
         return
     data = "const PATH: &str = \"" + os.path.join(workdir, "kernel", "target", "target", "debug" if DEBUG else "release", KERNEL_BRAND) + "\";\n" + data
-    write(build_rs, data)
+    build_rs.write(data, append=False)
 
 args = arg_parse()
 logdir = args.logdir
