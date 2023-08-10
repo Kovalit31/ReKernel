@@ -10,27 +10,48 @@ import termios
 import time
 import pty
 import platform
-from argparse import ArgumentParser
+import argparse
 
+# ========
 # Versions
-MAJOR_VER = 0
-MINOR_VER = 2
-PATCH_LEVEL = 0
-EXTRA = "alpha"
-VERSION = ".".join([str(x) for x in [MAJOR_VER, MINOR_VER, PATCH_LEVEL]])+(f"-{EXTRA}" if EXTRA != None else "")
-KERNEL_BRAND = "rekernel"
+# ========
+SCRIPT_MAJOR_VER = 0
+SCRIPT_MINOR_VER = 2
+SCRIPT_PATCH_VER = 1
+SCRIPT_EXTRA_VER = "alpha"
+SCRIPT_VERSION = ".".join([str(x) for x in [SCRIPT_MAJOR_VER, SCRIPT_MINOR_VER, SCRIPT_PATCH_VER]])+(f"-{SCRIPT_EXTRA_VER}" if SCRIPT_EXTRA_VER != None else "")
+KERNEL_BRAND_NAME = "rekernel"
 
+# ===============
 # Runtime folders
+# ===============
 BASE_DIR = os.path.dirname(__file__)
 SCRIPT_DIR = os.path.join(BASE_DIR, "scripts")
+BUILD_DIR = os.path.join(BASE_DIR, "build")
 
+# =======================
 # Supported targets/archs
+# =======================
 ARCH_RE = ["i.86/x86", "x86_64/x86_64", "sun4u/sparc64", "arm.*/arm", "sa110/arm", "s390x/s390", "ppc.*/powerpc", "mips.*/mips", "sh[234].*/sh", "aarch64.*/arm64", "riscv.*/riscv", "loongarch.*/loongarch"]
 TARGETS = ["clean", "kernel", "image", "legacy", "prepare"]
 ARCHS = ["x86_64"]
-
 DEFAULT_TARGET = 3
-PREIMAGE = TARGETS[1:3]
+
+# ===========
+# Add recipes
+# ===========
+ADD_RECIPES = {
+    # what: [where, next]
+    "build/preimage": TARGETS[2:3],
+    "build/prepare": TARGETS[1:],
+    "build/build": TARGETS[1:-2],
+    "build/image": TARGETS[2:3],
+    "build/clean": [TARGETS[0]],
+    "build_sys_install/components": TARGETS[1:],
+    "build_sys_install/rustup": TARGETS[1:],
+    "build_sys_install/toolchain": TARGETS[1:],
+    "build/run": TARGETS[2:]
+}
 
 class ExecutingInterrupt:
     '''
@@ -55,6 +76,9 @@ class ExecutingInterrupt:
         signal.signal(signal.SIGTERM, self.old_sigterm)
 
 class File:
+    '''
+    File class
+    '''
     def __init__(self, path: str) -> None:
         self.path = path
         if not os.path.exists(os.path.dirname(path)):
@@ -89,12 +113,27 @@ class File:
         self.write("", append=False)
 
 class Directory:
+    '''
+    Directory class.
+    '''
     def __init__(self, path: str) -> None:
         self.path = path
         if not os.path.exists(path):
             os.makedirs(path)
         if os.path.isfile(path):
             printf("Path is file, cannot use it as dir!", level='f')
+    
+    def create_file(self, rel_path: str) -> File:
+        if os.path.isabs(rel_path):
+            printf("Can't create file in this dircetory! Creating file, where you want!", level='w')
+            return File(rel_path)
+        return File(os.path.join(self.path, rel_path))
+    
+    def create_dir(self, rel_path: str):
+        if os.path.isabs(rel_path):
+            printf("Can't create directory in this dircetory! Creating dircetory, where you want!", level='w')
+            return Directory(rel_path)
+        return Directory(os.path.join(self.path, rel_path))
     
     def content(self) -> list:
         return os.listdir(self.path)
@@ -103,6 +142,9 @@ class Directory:
         shutil.rmtree(self.path)
 
 class LogFile(File):
+    '''
+    Logging file implementation, based on File class.
+    '''
     def __init__(self, path: str, parent=None) -> None:
         super().__init__(path)
         self.have_parent = parent != None
@@ -141,7 +183,7 @@ class Recipes:
     def __init__(self) -> None:
         self.recipes = dict()
     
-    def load_recipe(self, recipe: RecipeNode, group: str) -> int:
+    def load_recipe(self, recipe: str, group: str) -> int:
         '''
         Loads recipe type RecipeNode and return index in group
         '''
@@ -158,12 +200,40 @@ class Recipes:
     def get_recipes(self) -> list[str]:
         return (lambda diction: [ x for x in diction.keys() ])(self.recipes)
     
-    def get_recipe_group(self, group: str) -> list[RecipeNode]:
+    def get_recipe_group(self, group: str) -> list[str]:
         if not group in (lambda diction: [ x for x in diction.keys() ])(self.recipes):
             return []
         return self.recipes[group]
     
+    def set_recipe_group(self, group: str, recipes: list[str]) -> None:
+        self.recipes[group] = recipes
+
+class ArgumentConstructor:
+    def __init__(self, *args, **kwargs):
+        self.args = args
+        self.kwargs = kwargs
+    
+    def get_argdata(self):
+        return self.args, self.kwargs
+
+# ================
+# Argument parsing
+# ================
+PROGRAMM = ArgumentConstructor(description="Build system for ReKernel", epilog="Under GNU v3 Public license. ReKernel is not new kernel, it is Linux kernel rewrite to Rust with some improvements")
+ARGUMENTS = [
+    ArgumentConstructor("target", help="Build terget (clean will clear logs and data)", metavar="TARGET", nargs="?", default=TARGETS[DEFAULT_TARGET], choices=TARGETS),
+    ArgumentConstructor("-v", "--verbose", help="Be verbose", action="store_true"),
+    ArgumentConstructor("-d", "--debug", help="Switch into debug configuration", action='store_true'),
+    ArgumentConstructor("--force", help="Force events", action="store_true"),
+    ArgumentConstructor('-n', "--norun", help="Don't run after build", action='store_true'),
+    ArgumentConstructor("--timeout", help="Timeout for input (for debug mode)", type=int, default=5, metavar="TIMEOUT"),
+    ArgumentConstructor("--nodebugconsole", help="Don't start debugging executor (for debug mode)", action="store_true"),
+    ArgumentConstructor("--logdir", help="Logging directory", type=str, metavar="LOGDIR", default=os.path.join(BASE_DIR, "logs")),
+]
+
+# ==============================
 # Thanks for inputimeout project
+# ==============================
 class TimeoutOccurred(Exception):
     pass
 
@@ -184,8 +254,6 @@ def posix_inputimeout(prompt='', timeout=30):
         _raw_print("\n")
         termios.tcflush(sys.stdin, termios.TCIFLUSH)
         raise TimeoutOccurred()
-
-# END
 
 def debug_executor(executor):
     def wrap(*args, **kwargs):
@@ -249,8 +317,7 @@ def execute(script: str, args="", exit_msg=None):
     Basedir can be accessed by $2.
     Logging file is on $3 argument.
     '''
-    script = os.path.join(SCRIPT_DIR, f"{script}.sh")
-    if not os.path.exists(script):
+    if not os.path.exists(script := os.path.join(SCRIPT_DIR, f"{script}.sh")):
         raise Exception(f"No script found {script}")
     with ExecutingInterrupt() as ei:
         os.system(f"chmod 755 {script}")
@@ -262,42 +329,95 @@ def execute(script: str, args="", exit_msg=None):
     if interrupt:
         printf(f"Error occured at {script}\n{logs}" if exit_msg == None else exit_msg, level='f')
 
-def arg_parse():
-    parser =  ArgumentParser(description="Build system for ReKernel", epilog="Under GNU v3 Public license. ReKernel is not new kernel, it is Linux kernel rewrite to Rust with some improvements")
-    parser.add_argument("target", help="Build terget (clean will clear logs and data)", metavar="TARGET", nargs="?", default=TARGETS[DEFAULT_TARGET], choices=TARGETS)
-    parser.add_argument("-v", "--verbose", help="Be verbose", action="store_true")
-    parser.add_argument("-d", "--debug", help="Switch into debug configuration", action='store_true')
-    parser.add_argument('-n', "--norun", help="Don't run after build", action='store_true')
-    parser.add_argument("--timeout", help="Timeout for input (for debug mode)", type=int, default=5, metavar="TIMEOUT")
-    parser.add_argument("--nodebugconsole", help="Don't start debugging executor (for debug mode)", action="store_true")
-    parser.add_argument("--logdir", help="Logging directory", type=str, metavar="LOGDIR", default=os.path.join(BASE_DIR, "logs"))
-    # parser.add_argument("-a", "--arch", help="Build for ARCH", default=ARCHS[DEFAULT_ARCH], choices=ARCHS, metavar="ARCH") # NOTE Can't use, while not cross-compilator
+def arg_parse(programm: ArgumentConstructor, arguments: list[ArgumentConstructor]):
+    _program_args, _program_kwargs = programm.get_argdata()
+    parser = argparse.ArgumentParser(*_program_args, **_program_kwargs)
+    for x in arguments:
+        _arg_args, _arg_kwargs = x.get_argdata()
+        parser.add_argument(*_arg_args, **_arg_kwargs)
     args = parser.parse_args()
     return args
 
-def recipe_runner(recipe_list: list[RecipeNode]):
-    for x in recipe_list:
-        x.execute()
+def recipe_runner(recipe_list: list[str]):
+    if len(recipe_list) == 0:
+        return
+    exec = 0
+    for x in RECIPES["__first__"][1]:
+        if x in recipe_list:
+            exec = recipe_list.index(x)
+            break
+    else:
+        printf("First symbol can't be found, abort!", level='f')
+    while True:
+        if exec == -1:
+            break
+        _e, _ri = RECIPES[recipe_list[exec]]
+        _e.execute()
+        while True:
+            # Resolve next, if None, set exec to -1
+            _, _ri = RECIPES[_ri]
+            if _ri == None:
+                exec = -1
+                break
+            if _ri in recipe_list:
+                exec = recipe_list.index(_ri)
+                break
+
+def gen_recipes_from_context(context: dict[str, list[str]], ignore=[]):
+    keys = (lambda d: [x for x in d.keys()])(context)
+    _k = []
+    _o = dict()
+    for x in keys:
+        for y in context[x]:
+            if not y in _k:
+                _k.append(y)
+                _o[y] = []
+            if not x in ignore:
+                _o[y].append(x)
+    recipes = Recipes()
+    for x in _k:
+        recipes.set_recipe_group(x, _o[x])
+    return recipes
 
 if __name__ != "__main__":
     exit()
 
-# Python recipes
+# ===========================
+# Import custom configuration
+# ===========================
+def import_modules():
+    pass
 
-def set_path(target: str) -> None:
-    if not target in PREIMAGE:
+# ==============
+# Python recipes
+# ==============
+def set_path(target: str, add_recipes: dict[str, list[str]]) -> None:
+    if not target in add_recipes["build/preimage"]:
         return
     workdir = os.path.join(BASE_DIR, "build")
     build_rs = File(os.path.join(workdir, "image", "build.rs"))
     data = "".join(build_rs.read())
     if data.startswith("const PATH: &str"):
         return
-    data = "const PATH: &str = \"" + os.path.join(workdir, "kernel", "target", "target", "debug" if DEBUG else "release", KERNEL_BRAND) + "\";\n" + data
+    data = "const PATH: &str = \"" + os.path.join(workdir, "kernel", "target", "target", "debug" if DEBUG else "release", KERNEL_BRAND_NAME) + "\";\n" + data
     build_rs.write(data, append=False)
 
-args = arg_parse()
-logdir = args.logdir
+def check_workdir(target: str, prepare_recipe: str) -> None:
+    if not f".{target}" in ( directory := Directory(os.path.join(BASE_DIR, "build")) ):
+        return
+    else:
+        directory.remove()
+        recipe_runner([RECIPES[prepare_recipe]])
+        File(os.path.join(directory, f".{target}"))
+
+# =========
+#   Main
+# =========
+
+args = arg_parse(PROGRAMM, ARGUMENTS)
 arch = get_arch()
+
+logdir = args.logdir
 target = args.target
 norun = args.norun
 
@@ -307,13 +427,32 @@ global INPUT_TIMEOUT
 global GLOBAL_LOG
 global SCRIPT_LOG
 global NO_CONSOLE
+global FORCE
+global RECIPES
 
 DEBUG = args.debug
 VERBOSE = args.verbose
+FORCE = args.force
 INPUT_TIMEOUT = args.timeout
+NO_CONSOLE = args.nodebugconsole
 GLOBAL_LOG = LogFile(os.path.join(logdir, f'{time.strftime("%Y-%m-%d %H:%M:%S")}.log'))
 SCRIPT_LOG = LogFile(os.path.join(logdir, 'script_logger.log'), parent=GLOBAL_LOG)
-NO_CONSOLE = args.nodebugconsole
+RECIPES: dict[str, list[RecipeNode, str]] = {
+    # recipe: [recipe_node, next_recipe]
+    "__first__": [None, ["workdir/check", "build/prepare", "build/clean"]],
+    "build/prepare": [RecipeNode("build/prepare", f"{arch} {target}"), "build_sys_install/rustup"],
+    "build/clean": [RecipeNode("build/clean", f"{logdir}"), "workdir/check"],
+    "build/build": [RecipeNode("build/build", "release" if not DEBUG else "debug"), "build/preimage"],
+    "build/image": [RecipeNode("build/image", "release" if not DEBUG else "debug"), "build/run"],
+    "build/run": [RecipeNode("build/run", "release" if not DEBUG else "debug"), None],
+    "build_sys_install/rustup": [RecipeNode("build_sys_install/rustup", None), "build_sys_install/toolchain"],
+    "build_sys_install/components": [RecipeNode("build_sys_install/components", None), "build/build"],
+    "build_sys_install/toolchain": [RecipeNode("build_sys_install/toolchain", f"{arch}"), "build_sys_install/components"],
+    "core/cmd_chk": [RecipeNode("core/cmd_chk", None), None], # NOTE Use it with additional args
+    "example": [RecipeNode("example", None), None], # NOTE It's just a example
+    "build/preimage": [PythonRecipeNode(set_path, target, ADD_RECIPES), "build/image"],
+    "workdir/check": [PythonRecipeNode(check_workdir, target, "build/prepare"), "build_sys_install/rustup"]
+}
 
 if not check_sys() and not DEBUG:
     printf('Program can\'t be run on non-linux os!', level='f')
@@ -323,41 +462,7 @@ print(arch) if DEBUG else do_nothing()
 if not arch in ARCHS:
     printf("Compilation haven't supported yet on this arch!", level='f')
 
-# Inititalize recipes
-RECIPE_BUILD__PREPARE = RecipeNode("build/prepare", f"{arch} {target}")
-RECIPE_BUILD__CLEAN = RecipeNode("build/clean", f"{logdir}")
-RECIPE_BUILD__BUILD = RecipeNode("build/build", "release" if not DEBUG else "debug")
-RECIPE_BUILD__IMAGE = RecipeNode("build/image", "release" if not DEBUG else "debug")
-RECIPE_BUILD__RUN = RecipeNode("build/run", "release" if not DEBUG else "debug")
-RECIPE_BUILD_SYS_INSTALL__RUSTUP = RecipeNode("build_sys_install/rustup", None)
-RECIPE_BUILD_SYS_INSTALL__COMPONENTS = RecipeNode("build_sys_install/components", None)
-RECIPE_BUILD_SYS_INSTALL__TOOLCHAIN = RecipeNode("build_sys_install/toolchain", f"{arch}")
-RECIPE_CORE__CMD_CHK = RecipeNode("core/cmd_chk", None) # NOTE Use it with additional args
-RECIPE_EXAMPLE = RecipeNode("example", None) # NOTE It's just a example
-PYTHON_BUILD__PREIMAGE = PythonRecipeNode(set_path, target)
-
-# Load recipes
-recipes = Recipes()
-recipes.load_recipe(RECIPE_BUILD__CLEAN, "clean")
-recipes.load_recipe(RECIPE_BUILD__PREPARE, "build")
-recipes.load_recipe(RECIPE_BUILD_SYS_INSTALL__RUSTUP, "build")
-recipes.load_recipe(RECIPE_BUILD_SYS_INSTALL__TOOLCHAIN, "build")
-recipes.load_recipe(RECIPE_BUILD_SYS_INSTALL__COMPONENTS, "build")
-recipes.load_recipe(RECIPE_BUILD__BUILD, "build")
-
-# Duplicate build group as base of other builds
-for x in TARGETS:
-    if x != "clean" and x != "prepare":
-        recipes.recipes[x] = copy.deepcopy(recipes.get_recipe_group("build"))
-        if x != "image":
-            recipes.recipes[x].append(RECIPE_BUILD__IMAGE)
-        
-recipes.load_recipe(PYTHON_BUILD__PREIMAGE, "image")
-recipes.load_recipe(RECIPE_BUILD__IMAGE, "image")
-
-for y in TARGETS:
-    if y != "clean" and y != "prepare" and y != "kernel":
-        recipes.load_recipe(RECIPE_BUILD__RUN, y) if not norun else do_nothing()
+recipes = gen_recipes_from_context(ADD_RECIPES, ignore=["build/prepare"] + [] if norun else ["build/run"])
 
 if DEBUG:
     if target == "prepare":
