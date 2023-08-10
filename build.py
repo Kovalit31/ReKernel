@@ -50,7 +50,8 @@ ADD_RECIPES = {
     "build_sys_install/components": TARGETS[1:],
     "build_sys_install/rustup": TARGETS[1:],
     "build_sys_install/toolchain": TARGETS[1:],
-    "build/run": TARGETS[2:]
+    "build/run": TARGETS[2:],
+    "workdir/check": TARGETS[1:-1]
 }
 
 class ExecutingInterrupt:
@@ -403,12 +404,12 @@ def set_path(target: str, add_recipes: dict[str, list[str]]) -> None:
     build_rs.write(data, append=False)
 
 def check_workdir(target: str, prepare_recipe: str) -> None:
-    if not f".{target}" in ( directory := Directory(os.path.join(BASE_DIR, "build")) ):
+    if f".{target}" in ( directory := Directory(BUILD_DIR) ).content():
         return
     else:
         directory.remove()
-        recipe_runner([RECIPES[prepare_recipe]])
-        File(os.path.join(directory, f".{target}"))
+        recipe_runner([prepare_recipe])
+        File(os.path.join(BUILD_DIR, f".{target}"))
 
 # =========
 #   Main
@@ -462,7 +463,7 @@ print(arch) if DEBUG else do_nothing()
 if not arch in ARCHS:
     printf("Compilation haven't supported yet on this arch!", level='f')
 
-recipes = gen_recipes_from_context(ADD_RECIPES, ignore=["build/prepare"] + [] if norun else ["build/run"])
+recipes = gen_recipes_from_context(ADD_RECIPES, ignore=(["build/prepare"] if DEBUG else []) + (["build/run"] if norun else []))
 
 if DEBUG:
     if target == "prepare":
