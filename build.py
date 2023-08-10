@@ -44,8 +44,8 @@ ADD_RECIPES = {
     # what: [where, next]
     "build/preimage": TARGETS[2:3],
     "build/prepare": TARGETS[1:],
-    "build/build": TARGETS[1:-2],
-    "build/image": TARGETS[2:3],
+    "build/build": TARGETS[1:-1],
+    "build/image": TARGETS[2:-1],
     "build/clean": [TARGETS[0]],
     "build_sys_install/components": TARGETS[1:],
     "build_sys_install/rustup": TARGETS[1:],
