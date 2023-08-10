@@ -33,8 +33,8 @@ jobs:
       run: mv build/kernel/target/target/release/bootimage-rekernel.bin /tmp/output/legacy_image-release.bin 
     - name: Move logs
       run: mv logs /tmp/output/legacy_logs
-    - name: Clean env
-      run: python3 build.py clean
+    # - name: Clean env
+    #   run: python3 build.py clean NOTE no more need
     - name: Build with Python on debug (image)
       run: python3 build.py --debug --nodebugconsole --norun image
     - name: Move artifacts
