@@ -35,7 +35,7 @@ main() {
     if [ ! -f "kernel/target.json" ]; then
         cp "configs/all/$1/target.json" "kernel/"
     fi
-    if [ "$2" == "legacy" ]; then
+    if [ "$2" == "legacy" ] || [ "$2" == "dev" ] ; then
         rm -rf image/
         exit 0
     fi

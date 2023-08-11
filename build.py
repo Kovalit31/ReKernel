@@ -33,7 +33,7 @@ BUILD_DIR = os.path.join(BASE_DIR, "build")
 # Supported targets/archs
 # =======================
 ARCH_RE = ["i.86/x86", "x86_64/x86_64", "sun4u/sparc64", "arm.*/arm", "sa110/arm", "s390x/s390", "ppc.*/powerpc", "mips.*/mips", "sh[234].*/sh", "aarch64.*/arm64", "riscv.*/riscv", "loongarch.*/loongarch"]
-TARGETS = ["clean", "kernel", "image", "legacy", "prepare"]
+TARGETS = ["clean", "kernel", "image", "legacy", "dev", "prepare"]
 ARCHS = ["x86_64"]
 DEFAULT_TARGET = 3
 
@@ -41,16 +41,16 @@ DEFAULT_TARGET = 3
 # Add recipes
 # ===========
 ADD_RECIPES = {
-    # what: [where, next]
-    "build/preimage": TARGETS[2:3],
+    # what: [where]
+    "build/preimage": TARGETS[2:-3],
     "build/prepare": TARGETS[1:],
     "build/build": TARGETS[1:-1],
-    "build/image": TARGETS[2:-1],
+    "build/image": TARGETS[2:-2],
     "build/clean": [TARGETS[0]],
     "build_sys_install/components": TARGETS[1:],
     "build_sys_install/rustup": TARGETS[1:],
     "build_sys_install/toolchain": TARGETS[1:],
-    "build/run": TARGETS[2:],
+    "build/run": TARGETS[2:-2],
     "workdir/check": TARGETS[1:-1]
 }
 
