@@ -1,0 +1,7 @@
+[package]
+name = "rekernel_image"         # or any other name
+version = "0.1.0"
+
+[dependencies]
+rekernel_image_headers = { path = "./headers" }
+rekernel_headers = { path = "../headers" }
