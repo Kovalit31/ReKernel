@@ -6,7 +6,7 @@
 #![allow(non_shorthand_field_patterns)]
 #![allow(unused_imports)]
 
-struct ELF_IDENT_HEADER {
+pub struct ELF_IDENT_HEADER {
     ELF_FIRST_BYTE: u8,
     ELF_MAGIC_BYTES: [u8; 3], // "ELF"
     ELF_BITNESS: u8,
@@ -18,7 +18,7 @@ struct ELF_IDENT_HEADER {
 }
 
 #[cfg(target_pointer_width="64")]
-struct ELF_HEADER_64 {
+pub struct ELF_HEADER_64 {
     ELF_TYPE: u16,
     ELF_MACHINE: u16,
     ELF_VERSION: u32, // 0x01
@@ -34,7 +34,7 @@ struct ELF_HEADER_64 {
     ELF_SHSTRNDX: u16, // Section Header String Table Index
 }
 
-struct ELF_HEADER_32 {
+pub struct ELF_HEADER_32 {
     ELF_TYPE: u16,
     ELF_MACHINE: u16,
     ELF_VERSION: u32, // 0x01
@@ -51,7 +51,7 @@ struct ELF_HEADER_32 {
 }
 
 #[cfg(target_pointer_width="64")]
-struct ELF_CODE_HEADER_64 {
+pub struct ELF_CODE_HEADER_64 {
     PH_TYPE: u32,
     PH_FLAGS: u32,
     PH_OFFSET: u64,
@@ -62,7 +62,7 @@ struct ELF_CODE_HEADER_64 {
     PH_ALIGN: u64,
 }
 
-struct ELF_CODE_HEADER_32 {
+pub struct ELF_CODE_HEADER_32 {
     PH_TYPE: u32,
     PH_OFFSET: u32,
     PH_VIRT_ADDR: u32,
@@ -74,7 +74,7 @@ struct ELF_CODE_HEADER_32 {
 }
 
 #[cfg(target_pointer_width="64")]
-struct ELF_DATA_HEADER_64 {
+pub struct ELF_DATA_HEADER_64 {
     SH_NAME: u32,
     SH_TYPE: u32,
     SH_FLAGS: u64,
@@ -87,7 +87,7 @@ struct ELF_DATA_HEADER_64 {
     SH_ENTSIZE: u64,
 }
 
-struct ELF_DATA_HEADER_32 {
+pub struct ELF_DATA_HEADER_32 {
     SH_NAME: u32,
     SH_TYPE: u32,
     SH_FLAGS: u32,
@@ -99,3 +99,15 @@ struct ELF_DATA_HEADER_32 {
     SH_ADDR_ALIGN: u32,
     SH_ENTSIZE: u32,
 }
+
+#[cfg(target_pointer_width="64")]
+pub const ELF64_SUPPORT: bool = true;
+#[cfg(target_pointer_width="32")]
+pub const ELF64_SUPPORT: bool = false;
+
+pub const ELF_FIRST_BYTE: u8 = 0x7f;
+pub const ELF_MAGIC_BYTES: [u8; 3] = [0x45, 0x4c, 0x46];
+pub const ELF_OS_ABI: u8 = 0x03; // Linux
+pub const ELF_ABI_VERSION: u8 = 0x01; // Current version :)
+
+// I'll think about this later
