@@ -2,8 +2,8 @@
 name: Bug report
 about: Create a report to help us improve
 title: "[BUG]"
-labels: ''
-assignees: ''
+labels: bug
+assignees: Kovalit31
 
 ---
 
@@ -23,7 +23,7 @@ A clear and concise description of what you expected to happen.
 **Screenshots**
 If applicable, add screenshots to help explain your problem.
 
-**Desktop (please complete the following information):**
+**Build info (please fill following info, if it necessary):**
  - OS: Linux (May be Android + Termux + Linux)
  - Rustc Version [e.g. nightly-blablabla]
  - Python Version [e.g 3.8]
