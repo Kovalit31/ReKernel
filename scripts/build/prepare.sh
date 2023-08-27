@@ -36,28 +36,15 @@ main() {
         cp "configs/all/$1/target.json" "kernel/"
     fi
     if [ "$2" == "legacy" ]; then
-        rm -rf image_* headers
+    else
+        if [! -f "kernel/.cargo/config.toml" ]; then
+        rm -rf image
         exit 0
     fi
-    if [ "$2" == "dev" ]; then
-        cp kernel/patch_dev/* kernel/src
-        mv image_dev image
-        rm -rf image_bootloader
-    else
-        cp kernel/patch/* kernel/src
-        mv image_bootloader image
-        rm -rf image_dev
-    fi
+    cp kernel/patch/* kernel/src
+    mv image_bootloader image
     if [ ! -f "image/Cargo.toml" ]; then
         cp "configs/$2/$1/cargo_image.toml" image/Cargo.toml
-    fi
-    if [ ! "$2" == "dev" ]; then
-        if [ ! -d "image/.cargo" ]; then
-            mkdir image/.cargo
-        fi
-        if [ ! -f "image/.cargo/config.toml" ]; then
-            cp "configs/$2/$1/config_image.toml" image/.cargo/config.toml
-        fi
     fi
     if [ ! -f "image/target.json" ] || [ ! -f "kernel/target.json" ]; then
         cp "configs/all/$1/target.json" image/target.json
