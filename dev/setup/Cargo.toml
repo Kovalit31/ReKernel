@@ -1,0 +1,7 @@
+[package]
+name = "rekernel_setup"
+version = "0.1.0"
+
+[dependencies]
+rekernel_headers = { path = "../headers" }
+

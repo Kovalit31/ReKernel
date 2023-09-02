@@ -11,6 +11,7 @@ import time
 import pty
 import platform
 import argparse
+import json
 
 # ========
 # Versions
@@ -438,18 +439,22 @@ INPUT_TIMEOUT = args.timeout
 NO_CONSOLE = args.nodebugconsole
 GLOBAL_LOG = LogFile(os.path.join(logdir, f'{time.strftime("%Y-%m-%d %H:%M:%S")}.log'))
 SCRIPT_LOG = LogFile(os.path.join(logdir, 'script_logger.log'), parent=GLOBAL_LOG)
+
+# ============
+# Recipe order
+# ============
 RECIPES: dict[str, list[RecipeNode, str]] = {
     # recipe: [recipe_node, next_recipe]
     "__first__": [None, ["workdir/check", "build/prepare", "build/clean"]],
     "build/prepare": [RecipeNode("build/prepare", f"{arch} {target}"), "build_sys_install/rustup"],
     "build/clean": [RecipeNode("build/clean", f"{logdir}"), "workdir/check"],
-    "build/build": [RecipeNode("build/build", "release" if not DEBUG else "debug"), "build/preimage"],
+    "build/build": [RecipeNode("build/build", "release" if not DEBUG else "debug"), "build/build_dev"],
+    "build/build_dev": [RecipeNode("build/dev", None), "build/preimage"], # Do not use any arguments: dev build is always debuggable! 
     "build/image": [RecipeNode("build/image", "release" if not DEBUG else "debug"), "build/run"],
     "build/run": [RecipeNode("build/run", "release" if not DEBUG else "debug"), None],
     "build_sys_install/rustup": [RecipeNode("build_sys_install/rustup", None), "build_sys_install/toolchain"],
     "build_sys_install/components": [RecipeNode("build_sys_install/components", None), "build/build"],
     "build_sys_install/toolchain": [RecipeNode("build_sys_install/toolchain", f"{arch}"), "build_sys_install/components"],
-    "core/cmd_chk": [RecipeNode("core/cmd_chk", None), None], # NOTE Use it with additional args
     "example": [RecipeNode("example", None), None], # NOTE It's just a example
     "build/preimage": [PythonRecipeNode(set_path, target, ADD_RECIPES), "build/image"],
     "workdir/check": [PythonRecipeNode(check_workdir, target, "build/prepare"), "build_sys_install/rustup"]
