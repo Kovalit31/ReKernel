@@ -68,12 +68,12 @@ class ExecutingInterrupt:
         self.signal = signum
         self.frame = frame
     
-    def __enter__(self) -> None:
+    def __enter__(self) -> object:
         self.old_sigint = signal.signal(signal.SIGINT, self._handler)
         self.old_sigterm = signal.signal(signal.SIGTERM, self._handler)
         return self
     
-    def __exit__(self, type, value, traceback) -> None:
+    def __exit__(self, *_) -> None:
         signal.signal(signal.SIGINT, self.old_sigint)
         signal.signal(signal.SIGTERM, self.old_sigterm)
 
@@ -97,7 +97,7 @@ class File:
             file.close()
             return data
         except:
-            return ""
+            return []
     
     def write(self, data, append=True) -> None:
         try:
@@ -160,16 +160,16 @@ class LogFile(File):
     def write_log(self, data: str) -> None:
         self.write(f'\n[{time.strftime("%Y-%m-%d %H:%M:%S")} ({time.process_time()} from start)] ' + data.replace("\n\n", "\n").rstrip().replace("\n", f'\n[{time.strftime("%Y-%m-%d %H:%M:%S")} ({time.process_time()} from start)] '))
 
-    def save_to_parent(self, prevscr: str = None) -> None:
-        self.parent.write_log(f'Output of {"previous script" if prevscr == None else prevscr}:\n{self.read_log()}') if self.have_parent else do_nothing()
+    def save_to_parent(self, prevscr: str = "") -> None:
+        self.parent.write_log(f'Output of {"previous script" if prevscr == None else prevscr}:\n{self.read_log()}') if self.parent is not None else do_nothing()
 
 class RecipeNode:
-    def __init__(self, script: str, args: str, exit_msg: str = None) -> None:
+    def __init__(self, script: str, args: str, exit_msg: str = "") -> None:
         self.script = script
         self.args = args
         self.exit = exit_msg
     
-    def execute(self, plus_args: str = None) -> None:
+    def execute(self, plus_args: str = "") -> None:
         return execute(self.script, args = self.args if plus_args == None else self.args + plus_args if self.args != None else plus_args, exit_msg = self.exit)
 
 class PythonRecipeNode:
