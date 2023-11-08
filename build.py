@@ -5,7 +5,8 @@ import platform
 import string
 import random
 import re
-from typing import Iterable
+import shutil
+from typing import Callable, Iterable
 
 # ==============================================================
 # #1 stackoverflow: https://stackoverflow.com/questions/3738381/what-do-i-do-when-i-need-a-self-referential-dictionary
@@ -46,6 +47,7 @@ def gen_uuid(length=20) -> str:
 # ============================
 # Usage #1 of #1 stackoverflow
 # ============================
+global definitions
 
 definitions = CallingDict(
         {   
@@ -58,8 +60,7 @@ definitions = CallingDict(
             "verbose": False,
             "arch_regex": ["i.86/x86", "x86_64/x86_64", "sun4u/sparc64", "arm.*/arm", "sa110/arm", "s390x/s390", "ppc.*/powerpc", "mips.*/mips", "sh[234].*/sh", "aarch64.*/arm64", "riscv.*/riscv", "loongarch.*/loongarch"],
             "default_path_arch_support": lambda d: os.path.join(d["default_path_base"], "configs", "arch"),
-            "arch_support": lambda d: os.listdir(d["default_path_arch_support"])
-            
+            "arch_support": lambda d: os.listdir(d["default_path_arch_support"])            
         }
     )
 
@@ -85,7 +86,7 @@ class Result():
 
     def unwrap(self) -> None:
         if self.is_err():
-            raise self.e_data
+            printf(str(self.e_data), level='f')
 
 class File:
     '''
@@ -143,8 +144,7 @@ class LogFile(File):
         self.write(f'\n[{time.strftime("%Y-%m-%d %H:%M:%S")} ({time.process_time()} from start)] ' + data.replace("\n\n", "\n").rstrip().replace("\n", f'\n[{time.strftime("%Y-%m-%d %H:%M:%S")} ({time.process_time()} from start)] '))
 
     def save_to_parent(self, prevscr: str = "") -> None:
-        self.parent.write_log(f'Output of {"previous script" if prevscr == None else prevscr}:\n{self.read_log()}') if self.parent is not None else do_nothing()
-
+        self.parent.write_log(f'Output of {"previous script" if len(prevscr) == 0 else prevscr}:\n{self.read_log()}') if self.parent is not None else do_nothing()
 
 # ==========================
 #       Base functions
@@ -179,7 +179,7 @@ def printf(*message, level="i", global_log: LogFile=definitions["global_log"]):
     if _level == 'f':
         if not definitions["verbose"]:
             exit(2)
-        raise Exception(string)
+        printf(string, level='f')
 
 def do_nothing() -> None:
     '''
@@ -195,39 +195,92 @@ class ConfigRead():
     '''
     Setups arch-specific command queue (line, sorry americans)
     '''
-    def __init__(self, file: File) -> None:
-        self.file = file
-        self.commands = {
-            "copy": self.copy
-        }
+    def __init__(self, file: str) -> None:
+        self.file = File(file)
         self.queue = []
+        self.command_registry = {
+            "copy": self.copy,
+            "echo": self.echo,
+            "mkdir": self.mkdir,
+            "move": self.move,
+            "build": self.build,
+        }
         self.preparse()
+    
+    def build(self, command_pointer: int) -> Result:
+        return Result()
+
+    def move(self, command_pointer: int) -> Result:
+        data = self.parse(self.queue[command_pointer][1])
+        destination, sources = data[-1], data[:-1]
+        self._fs_io_check(sources, destination).unwrap()
+        for x in sources:
+            try:
+                self._fs_io_real(x, destination, shutil.move, shutil.move)
+            except Exception as e:
+                return Result(e=e)
+        return Result()
+
+    def mkdir(self, command_pointer: int) -> Result:
+        data = self.parse(self.queue[command_pointer][1])
+        for x in data:
+            try:
+                os.makedirs(x, exist_ok=True)
+            except Exception as e:
+                return Result(e=e)
+        return Result()
+
+    def echo(self, command_pointer: int) -> Result:
+        data = self.parse(self.queue[command_pointer][1])
+        print(" ".join(data))
+        return Result()
 
     def copy(self, command_pointer: int) -> Result:
         data = self.parse(self.queue[command_pointer][1])
         destination, sources = data[-1], data[:-1]
-        if not os.path.isdir(destination) and len(sources) > 1:
-            return Result(e=Exception("Destination not dir, can't overwrite files!"))
-        if len(sources) < 1:
-            return Result(e=Exception("Haven't got destination!"))
+        self._fs_io_check(sources, destination).unwrap()
+        for x in sources:
+            try:    
+                self._fs_io_real(x, destination, shutil.copytree, shutil.copyfile)
+            except Exception as e:
+                return Result(e=e)
         return Result()
-
+    
     def run(self) -> None:
-        for pos, x in enumerate(self.queue):
+        if len(self.queue) < 1:
+            return # Do nothing
+        for x in range(len(self.queue)):
+            command = self.queue[x][0]
             try:
-                self.commands[x[0]](pos)
+                self.command_registry[command](x).unwrap()
             except KeyError:
-                printf(f"Unknown command '{x[0]}' at {pos}", level='e')
+                printf(f"Unresolved command: {command}", level="e")
 
     def preparse(self) -> None:
-        data = self.file.read()
-        for x in data:
-            y = x.rstrip()
-            y = y.lstrip() # NOTE can remove to make indentation after
-            if y == "":
+        lines = self.file.read()
+        for x in lines:
+            if x.strip() == "":
                 continue
-            command, data = y.split(" ", maxsplit=1)
-            self.queue.append([command, data])
+            command, data = x.strip().split(" ", maxsplit=1)
+            self.queue.append([command.lower(), data])
+    
+    @staticmethod
+    def _fs_io_check(src: list[str], dst: str) -> Result:
+        if not os.path.isdir(dst) and len(src) > 1:
+            return Result(e=Exception("Destination is not dir, cannot overwrite files!"))
+        if len(src) < 1:
+            return Result(e=Exception("Destination is not set!"))
+        return Result()
+
+    @staticmethod
+    def _fs_io_real(src: str, dst: str, src_dir_hand: Callable, src_oth_hand: Callable) -> None:
+        if os.path.isdir(dst):
+            dst = os.path.join(dst, os.path.basename(src))
+        if os.path.isdir(src):
+            src_dir_hand(src, dst)
+        else:
+            src_oth_hand(src, dst)
+        return
 
     @staticmethod
     def parse(data: str) -> list[str]:
@@ -263,9 +316,17 @@ class ConfigRead():
 #   Main functionality
 # ======================
 
-if get_arch() not in definitions["arch_support"]:
-    printf(f"Not supported arch '{get_arch()}'!", level='f')
-config = ConfigRead(File(os.path.join(definitions["default_path_base"], "configs", "arch", get_arch())))
-for x in config.queue:
-    print(config.parse(x[1]))
+def argparse():
+    # TODO Implement arg parser
+    pass
 
+def main(args: list = []) -> None:
+    if not get_arch() in definitions["arch_support"]:
+        printf("Arch not supported yet!", level="f")
+    arch = ConfigRead(os.path.join(definitions["default_path_arch_support"], get_arch()))
+#    arch.run()
+
+if __name__ == "__main__":
+    main()
+#arch = ArchSpecific()
+#arch.run()
