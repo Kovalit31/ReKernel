@@ -211,7 +211,7 @@ class ConfigRead():
         return Result()
 
     def move(self, command_pointer: int) -> Result:
-        data = self.parse(self.queue[command_pointer][1])
+        data = self.queue[command_pointer][1]
         destination, sources = data[-1], data[:-1]
         self._fs_io_check(sources, destination).unwrap()
         for x in sources:
@@ -222,7 +222,7 @@ class ConfigRead():
         return Result()
 
     def mkdir(self, command_pointer: int) -> Result:
-        data = self.parse(self.queue[command_pointer][1])
+        data = self.queue[command_pointer][1]
         for x in data:
             try:
                 os.makedirs(x, exist_ok=True)
@@ -231,12 +231,12 @@ class ConfigRead():
         return Result()
 
     def echo(self, command_pointer: int) -> Result:
-        data = self.parse(self.queue[command_pointer][1])
+        data = self.queue[command_pointer][1]
         print(" ".join(data))
         return Result()
 
     def copy(self, command_pointer: int) -> Result:
-        data = self.parse(self.queue[command_pointer][1])
+        data = self.queue[command_pointer][1]
         destination, sources = data[-1], data[:-1]
         self._fs_io_check(sources, destination).unwrap()
         for x in sources:
@@ -261,7 +261,7 @@ class ConfigRead():
         for x in lines:
             if x.strip() == "":
                 continue
-            command, data = x.strip().split(" ", maxsplit=1)
+            command, data = self.parse(x)
             self.queue.append([command.lower(), data])
     
     @staticmethod
@@ -281,9 +281,36 @@ class ConfigRead():
         else:
             src_oth_hand(src, dst)
         return
+    
+    def parse(self, data: str) -> tuple[str, list[str]]:
+        tokens = self.lex(data)
+        print(tokens)
+        out = self.gen(tokens)
+        print(out)
+        return "echo", out[0]
+
+    
+    @staticmethod
+    def gen(tokens: list[list[str]], variables: dict = {}) -> list[list[str]]:
+        out = [[], []]
+        write_to = 0
+        dash = False
+        _d = False
+        for pos, x in enumerate(tokens):
+            if x[0] == "DASH":
+                if dash == True:
+                    write_to = (write_to + 1) % 2
+                    dash = False
+                    continue
+                dash = True
+                continue
+            if dash:
+                dash = False
+            out[write_to].append(x[1])
+        return out
 
     @staticmethod
-    def parse(data: str) -> list[str]:
+    def lex(data: str) -> list[list[str]]:
         letters = {token: "LETTER" for token in string.ascii_letters}
         numbers = {token: "NUMBER" for token in string.digits}
         punc = {token: "PUNCTUATION" for token in string.punctuation}
@@ -296,7 +323,8 @@ class ConfigRead():
             "(": "PARENTESS_LEFT",
             ")": "PARENTESS_RIGHT",
             "-": "DASH",
-            " ": "WHITESPACE"
+            " ": "WHITESPACE",
+            "\n": "NLINE",
         }
         _tokens = {}
         _tokens.update(letters)
