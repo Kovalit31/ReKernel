@@ -56,7 +56,7 @@ definitions = CallingDict(
             "default_path_global_log": lambda d: os.path.join(d["default_path_global_log_path"], d["default_path_global_log_name"]),
             "default_path_base": os.path.dirname(__file__),
             "global_log": lambda d: LogFile(d["default_path_global_log"]),
-            "debug": False,
+            "debug": True,
             "verbose": False,
             "arch_regex": ["i.86/x86", "x86_64/x86_64", "sun4u/sparc64", "arm.*/arm", "sa110/arm", "s390x/s390", "ppc.*/powerpc", "mips.*/mips", "sh[234].*/sh", "aarch64.*/arm64", "riscv.*/riscv", "loongarch.*/loongarch"],
             "default_path_arch_support": lambda d: os.path.join(d["default_path_base"], "configs", "arch"),
@@ -72,21 +72,31 @@ definitions = CallingDict(
 # Got from Rust
 # =============
 
+class Err(Exception):
+    pass
+
 class Result():
-    def __init__(self, ok: Iterable = [], e=None) -> None:
-        self.result = "ok" if e is None else "err"
-        self.ok_data = [*ok]
-        self.e_data = e
+    def __init__(self, data) -> None:
+        self.result = True
+        if isinstance(data, Iterable):
+            _data = [*data]
+            self.data = tuple(*_data)
+        elif isinstance(data, Exception):
+            self.data = Err(str(Exception))
+            self.result = False
+        else:
+            self.data = (data)
 
     def is_ok(self) -> bool:
-        return self.result == "ok"
+        return self.result
 
     def is_err(self) -> bool:
-        return self.result == "err"
+        return not self.result
 
-    def unwrap(self) -> None:
+    def unwrap(self) -> object:
         if self.is_err():
-            printf(str(self.e_data), level='f')
+            printf(str(self.data), level='f')
+        return self.data
 
 class File:
     '''
@@ -147,8 +157,40 @@ class LogFile(File):
         self.parent.write_log(f'Output of {"previous script" if len(prevscr) == 0 else prevscr}:\n{self.read_log()}') if self.parent is not None else do_nothing()
 
 # ==========================
+#       Decorators
+# ==========================
+
+def debug_func(wrap: Callable) -> Callable:
+    def wrapper(*args, **kwargs) -> object:
+        if not definitions["debug"]:
+            return None
+        return wrap(*args, **kwargs)
+    return wrapper
+
+# ==========================
 #       Base functions
 # ==========================
+
+def clever_out(*data) -> Result:
+    tabs = 0
+    nums = [0]
+    try:
+        would_parse = []
+        not_resolved = True
+        while not_resolved:
+            if not isinstance(would_parse, Iterable):
+                printf("   "*tabs + str(would_parse), level='d')
+            else:
+               pass 
+        return Result(True)
+    except Exception as e:
+        return Result(e)
+
+def parse_at(data, *nums) -> Result:
+    parsed = data
+    for x in nums:
+        parsed = parsed[x]
+    return parsed
 
 def check_sys() -> bool:
     return platform.system().lower().startswith('linux')
@@ -257,12 +299,9 @@ class ConfigRead():
                 printf(f"Unresolved command: {command}", level="e")
 
     def preparse(self) -> None:
-        lines = self.file.read()
-        for x in lines:
-            if x.strip() == "":
-                continue
-            command, data = self.parse(x)
-            self.queue.append([command.lower(), data])
+        data = self.parse("".join(self.file.read()))
+        print(data)
+        self.queue.append(["echo", ["rbphphg"]])
     
     @staticmethod
     def _fs_io_check(src: list[str], dst: str) -> Result:
@@ -285,28 +324,56 @@ class ConfigRead():
     def parse(self, data: str) -> tuple[str, list[str]]:
         tokens = self.lex(data)
         print(tokens)
-        out = self.gen(tokens)
-        print(out)
+        splitted = self.split(tokens)
+        print(splitted)
+        out = []
+        for x in splitted:
+            pass 
         return "echo", out[0]
 
-    
     @staticmethod
-    def gen(tokens: list[list[str]], variables: dict = {}) -> list[list[str]]:
-        out = [[], []]
+    def gen_str(tokens: list[list[str]], variables: dict = {}):
+        pass
+
+    @staticmethod
+    def split(tokens: list[list[str]]) -> list[list[list[str]]]:
+        out = [[[], []]]
         write_to = 0
         dash = False
-        _d = False
+        skipped = True
+        put = True
         for pos, x in enumerate(tokens):
+            if not pos == 0:
+                if put:
+                    out[-1][write_to].append(tokens[pos-1])
+                put = True
             if x[0] == "DASH":
+                if skipped:
+                    skipped = False
+                    continue
+                put = False
                 if dash == True:
                     write_to = (write_to + 1) % 2
                     dash = False
                     continue
                 dash = True
                 continue
+            if x[0] == "BACKSLASH":
+                if skipped:
+                    skipped = False
+                    continue
+                put = False
+                skipped = True
+                continue
+            if x[0] == "NLINE":
+                if skipped:
+                    skipped = False
+                    continue
+                put = False
+                out.append([[], []])
+                continue
             if dash:
                 dash = False
-            out[write_to].append(x[1])
         return out
 
     @staticmethod
@@ -325,6 +392,7 @@ class ConfigRead():
             "-": "DASH",
             " ": "WHITESPACE",
             "\n": "NLINE",
+            ";": "NLINE",
         }
         _tokens = {}
         _tokens.update(letters)
