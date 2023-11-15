@@ -1,0 +1,2 @@
+
+check_cmd rustup -- not_fatal no_message ignore_3

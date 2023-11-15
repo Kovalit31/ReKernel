@@ -6,6 +6,7 @@ import string
 import random
 import re
 import shutil
+import json
 from typing import Callable, Iterable
 
 # ==============================================================
@@ -79,13 +80,12 @@ class Result():
     def __init__(self, data) -> None:
         self.result = True
         if isinstance(data, Iterable):
-            _data = [*data]
-            self.data = tuple(*_data)
+            self.data = (data)
         elif isinstance(data, Exception):
             self.data = Err(str(Exception))
             self.result = False
         else:
-            self.data = (data)
+            self.data = ([data])
 
     def is_ok(self) -> bool:
         return self.result
@@ -96,7 +96,7 @@ class Result():
     def unwrap(self) -> object:
         if self.is_err():
             printf(str(self.data), level='f')
-        return self.data
+        return self.data[0]
 
 class File:
     '''
@@ -171,26 +171,19 @@ def debug_func(wrap: Callable) -> Callable:
 #       Base functions
 # ==========================
 
-def clever_out(*data) -> Result:
-    tabs = 0
-    nums = [0]
+@debug_func
+def clever_out(data) -> Result:
     try:
-        would_parse = []
-        not_resolved = True
-        while not_resolved:
-            if not isinstance(would_parse, Iterable):
-                printf("   "*tabs + str(would_parse), level='d')
-            else:
-               pass 
+        printf(json.dumps(data, indent=4), level='d')
         return Result(True)
     except Exception as e:
         return Result(e)
 
-def parse_at(data, *nums) -> Result:
+def parse_at(data, nums) -> Result:
     parsed = data
     for x in nums:
         parsed = parsed[x]
-    return parsed
+    return Result(parsed)
 
 def check_sys() -> bool:
     return platform.system().lower().startswith('linux')
@@ -250,7 +243,7 @@ class ConfigRead():
         self.preparse()
     
     def build(self, command_pointer: int) -> Result:
-        return Result()
+        return Result(True)
 
     def move(self, command_pointer: int) -> Result:
         data = self.queue[command_pointer][1]
@@ -260,8 +253,8 @@ class ConfigRead():
             try:
                 self._fs_io_real(x, destination, shutil.move, shutil.move)
             except Exception as e:
-                return Result(e=e)
-        return Result()
+                return Result(e)
+        return Result(True)
 
     def mkdir(self, command_pointer: int) -> Result:
         data = self.queue[command_pointer][1]
@@ -269,13 +262,13 @@ class ConfigRead():
             try:
                 os.makedirs(x, exist_ok=True)
             except Exception as e:
-                return Result(e=e)
-        return Result()
+                return Result(e)
+        return Result(True)
 
     def echo(self, command_pointer: int) -> Result:
         data = self.queue[command_pointer][1]
         print(" ".join(data))
-        return Result()
+        return Result(True)
 
     def copy(self, command_pointer: int) -> Result:
         data = self.queue[command_pointer][1]
@@ -285,8 +278,8 @@ class ConfigRead():
             try:    
                 self._fs_io_real(x, destination, shutil.copytree, shutil.copyfile)
             except Exception as e:
-                return Result(e=e)
-        return Result()
+                return Result(e)
+        return Result(True)
     
     def run(self) -> None:
         if len(self.queue) < 1:
@@ -306,10 +299,10 @@ class ConfigRead():
     @staticmethod
     def _fs_io_check(src: list[str], dst: str) -> Result:
         if not os.path.isdir(dst) and len(src) > 1:
-            return Result(e=Exception("Destination is not dir, cannot overwrite files!"))
+            return Result(Exception("Destination is not dir, cannot overwrite files!"))
         if len(src) < 1:
-            return Result(e=Exception("Destination is not set!"))
-        return Result()
+            return Result(Exception("Destination is not set!"))
+        return Result(True)
 
     @staticmethod
     def _fs_io_real(src: str, dst: str, src_dir_hand: Callable, src_oth_hand: Callable) -> None:
@@ -323,13 +316,13 @@ class ConfigRead():
     
     def parse(self, data: str) -> tuple[str, list[str]]:
         tokens = self.lex(data)
-        print(tokens)
+        clever_out(tokens)
         splitted = self.split(tokens)
-        print(splitted)
+        clever_out(splitted)
         out = []
         for x in splitted:
             pass 
-        return "echo", out[0]
+        return "", [""]
 
     @staticmethod
     def gen_str(tokens: list[list[str]], variables: dict = {}):
@@ -373,6 +366,7 @@ class ConfigRead():
                 out.append([[], []])
                 continue
             if dash:
+                out[-1][write_to].append(["DASH", "-"])
                 dash = False
         return out
 
