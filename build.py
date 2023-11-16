@@ -222,6 +222,9 @@ def do_nothing() -> None:
     '''
     pass
 
+def pass_result(*args) -> Result:
+    return Result(True)
+
 # =========================
 #       Config reader
 # =========================
@@ -239,8 +242,9 @@ class ConfigRead():
             "mkdir": self.mkdir,
             "move": self.move,
             "build": self.build,
+            "check_cmd": pass_result,
         }
-        self.preparse()
+        self.parse()
     
     def build(self, command_pointer: int) -> Result:
         return Result(True)
@@ -284,17 +288,29 @@ class ConfigRead():
     def run(self) -> None:
         if len(self.queue) < 1:
             return # Do nothing
-        for x in range(len(self.queue)):
-            command = self.queue[x][0]
+        ign_count = 0
+        for pos, x in enumerate(self.queue):
+            if ign_count > 0:
+                ign_count -= 1
+                continue
+            data = {
+                "not_fatal": False,
+                "no_message": False
+            }
             try:
-                self.command_registry[command](x).unwrap()
+                result = self.command_registry[x[0]](pos)
+                mods = x[2]
+                printf(f"Mods: {mods}")
+                printf(f"Result Ok: {result.is_ok()}")
+                for m_pos, mod in enumerate(mods):
+                    if mod == "ignore":
+                        pass
+                    if mod == "not_fatal":
+                        pass
+                    if mod == "no_message":
+                        pass
             except KeyError:
-                printf(f"Unresolved command: {command}", level="e")
-
-    def preparse(self) -> None:
-        data = self.parse("".join(self.file.read()))
-        print(data)
-        self.queue.append(["echo", ["rbphphg"]])
+                printf(f"Unresolved command: {x[0]}", level="e")
     
     @staticmethod
     def _fs_io_check(src: list[str], dst: str) -> Result:
@@ -314,26 +330,55 @@ class ConfigRead():
             src_oth_hand(src, dst)
         return
     
-    def parse(self, data: str) -> tuple[str, list[str]]:
+    def parse(self) -> None:
+        data = "".join(self.file.read())
         tokens = self.lex(data)
         clever_out(tokens)
         splitted = self.split(tokens)
         clever_out(splitted)
+        _out = []
+        for command in splitted:
+            _out.append([[],[]])
+            _out[-1][0] = self.gen_str(command[0])
+            _out[-1][1] = self.gen_str(command[1])
         out = []
-        for x in splitted:
-            pass 
-        return "", [""]
+        for command in _out:
+            out.append([command[0][0], command[0][1:],command[1]])
+        self.queue = out
 
     @staticmethod
-    def gen_str(tokens: list[list[str]], variables: dict = {}):
-        pass
+    def gen_str(tokens: list[list[str]], variables: dict = {}) -> list[str]:
+        out = [""]
+        for pos, token in enumerate(tokens):
+            variable = False
+            variable_data = ""
+            if token[0] == "WHITESPACE":
+                if len(out[-1]) > 0 and len(tokens) - 1 > pos:
+                    out.append("")
+                continue
+            if token[0] == "VARIABLE":
+                if variable:
+                    variable = False
+                    try:
+                        out[-1] += variables[variable_data]
+                    except:
+                        printf(f"Unknown variable at {pos}", level="d")
+                    variable_data = ""
+                    continue
+                variable = True
+                continue
+            if variable:
+                variable += token[1]
+                continue
+            out[-1] += token[1]
+        return out
 
     @staticmethod
-    def split(tokens: list[list[str]]) -> list[list[list[str]]]:
+    def split(tokens: list[list[str]]) -> list[list[list[list[str]]]]:
         out = [[[], []]]
         write_to = 0
         dash = False
-        skipped = True
+        skipped = False
         put = True
         for pos, x in enumerate(tokens):
             if not pos == 0:
@@ -363,7 +408,8 @@ class ConfigRead():
                     skipped = False
                     continue
                 put = False
-                out.append([[], []])
+                if len(out[-1][0]+out[-1][1]) > 0 and len(tokens) - 1 > 0:
+                    out.append([[], []])
                 continue
             if dash:
                 out[-1][write_to].append(["DASH", "-"])
@@ -414,7 +460,7 @@ def main(args: list = []) -> None:
     if not get_arch() in definitions["arch_support"]:
         printf("Arch not supported yet!", level="f")
     arch = ConfigRead(os.path.join(definitions["default_path_arch_support"], get_arch()))
-#    arch.run()
+    arch.run()
 
 if __name__ == "__main__":
     main()

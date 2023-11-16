@@ -1,2 +1,12 @@
-
 check_cmd rustup -- not_fatal no_message ignore_3
+check_cmd wget -- % "Wget not found, abort!"
+run "wget -O- https://sh.rustup.rs | sh -s -- -y --profile minimal" -- % "Rustup can't be intalled"
+
+# Copy content
+
+copy ?workdir?/configs/?filename?/toolchain.toml ?workdir?/rust-toolchain.toml
+
+move ?workdir?/target/?filename? ?workdir?/arch
+
+build ?workdir?/kernel -- % "Can't build kernel!"
+build ?workdir?/arch -- % "Can't build arch!"
