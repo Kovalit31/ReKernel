@@ -82,7 +82,7 @@ class Result():
         if isinstance(data, Iterable):
             self.data = (data)
         elif isinstance(data, Exception):
-            self.data = Err(str(Exception))
+            self.data = Err(str(data))
             self.result = False
         else:
             self.data = ([data])
@@ -216,6 +216,16 @@ def printf(*message, level="i", global_log: LogFile=definitions["global_log"]):
             exit(2)
         printf(string, level='f')
 
+def strip_clean(data: list[str]) -> list[str]:
+    to_pop = []
+    out = data
+    for pos, x in enumerate(data):
+        if len(x.strip()) == 0:
+            to_pop.append(pos - len(to_pop))
+    for y in to_pop:
+        out.pop(y)
+    return out
+
 def do_nothing() -> None:
     '''
     Do nothing
@@ -288,27 +298,53 @@ class ConfigRead():
     def run(self) -> None:
         if len(self.queue) < 1:
             return # Do nothing
-        ign_count = 0
+        ign_count = 0 # It ignores upcoming commands
         for pos, x in enumerate(self.queue):
             if ign_count > 0:
                 ign_count -= 1
                 continue
             data = {
                 "not_fatal": False,
-                "no_message": False
+                "no_message": False,
+                "ignore": 0,
+                "error_message": ""
             }
             try:
+                wait_next = False
+                section = ""
                 result = self.command_registry[x[0]](pos)
                 mods = x[2]
                 printf(f"Mods: {mods}")
                 printf(f"Result Ok: {result.is_ok()}")
                 for m_pos, mod in enumerate(mods):
                     if mod == "ignore":
-                        pass
-                    if mod == "not_fatal":
-                        pass
-                    if mod == "no_message":
-                        pass
+                        wait_next = True
+                        section = mod
+                    elif mod == "%":
+                        wait_next = True
+                        section = "error_message"
+                    elif wait_next:
+                        data[section] = mod
+                    else:
+                        try:
+                            _ = data[mod]
+                            data[mod] = True
+                        except KeyError:
+                            printf(f"Unknown mod at {m_pos}", level='d')
+                ign_count = int(data["ignore"])
+                ok = result.is_ok()
+                if ok:
+                    continue
+                else:
+                    error = str(result.data)
+                    if len(data["error_message"]) > 0:
+                        error = data["error_message"]
+                    if data["no_message"]:
+                        error = None
+                    if data["not_fatal"]:
+                        continue
+                    if error is not None:
+                        printf(error, level='f')
             except KeyError:
                 printf(f"Unresolved command: {x[0]}", level="e")
     
@@ -333,61 +369,42 @@ class ConfigRead():
     def parse(self) -> None:
         data = "".join(self.file.read())
         tokens = self.lex(data)
-        clever_out(tokens)
-        splitted = self.split(tokens)
+        splitted = self.gen_instructions(tokens)
         clever_out(splitted)
-        _out = []
-        for command in splitted:
-            _out.append([[],[]])
-            _out[-1][0] = self.gen_str(command[0])
-            _out[-1][1] = self.gen_str(command[1])
         out = []
-        for command in _out:
+        for command in splitted:
             out.append([command[0][0], command[0][1:],command[1]])
         self.queue = out
 
     @staticmethod
-    def gen_str(tokens: list[list[str]], variables: dict = {}) -> list[str]:
-        out = [""]
-        for pos, token in enumerate(tokens):
-            variable = False
-            variable_data = ""
-            if token[0] == "WHITESPACE":
-                if len(out[-1]) > 0 and len(tokens) - 1 > pos:
-                    out.append("")
-                continue
-            if token[0] == "VARIABLE":
-                if variable:
-                    variable = False
-                    try:
-                        out[-1] += variables[variable_data]
-                    except:
-                        printf(f"Unknown variable at {pos}", level="d")
-                    variable_data = ""
-                    continue
-                variable = True
-                continue
-            if variable:
-                variable += token[1]
-                continue
-            out[-1] += token[1]
-        return out
-
-    @staticmethod
-    def split(tokens: list[list[str]]) -> list[list[list[list[str]]]]:
-        out = [[[], []]]
+    def gen_instructions(tokens: list[list[str]], variables: dict = {}) -> list[list[list[str]]]:
+        out = [[[""], [""]]]
         write_to = 0
         dash = False
         skipped = False
         put = True
+        quotes = False
+        double = False
+        nline_ignore = False
+        variable = False
+        variable_data = ""
         for pos, x in enumerate(tokens):
+            if nline_ignore:
+                put = False
             if not pos == 0:
                 if put:
-                    out[-1][write_to].append(tokens[pos-1])
+                    if not variable:
+                        out[-1][write_to][-1] += tokens[pos-1][1]
+                    else:
+                        variable_data += tokens[pos-1][1]
                 put = True
             if x[0] == "DASH":
                 if skipped:
                     skipped = False
+                    continue
+                if quotes:
+                    continue
+                if variable:
                     continue
                 put = False
                 if dash == True:
@@ -408,13 +425,102 @@ class ConfigRead():
                     skipped = False
                     continue
                 put = False
-                if len(out[-1][0]+out[-1][1]) > 0 and len(tokens) - 1 > 0:
-                    out.append([[], []])
+                if variable:
+                    variable = False
+                    out[-1][write_to][-1] += variable_data
+                if nline_ignore:
+                    nline_ignore = False
+                    continue
+#                if len(tokens[-1][0]+tokens[-1][1]) > pos+1 and len(tokens) - 1 > pos:
+                out[-1][0] = strip_clean(out[-1][0])
+                out[-1][1] = strip_clean(out[-1][1])
+                if len(out[-1][0]+out[-1][1]) == 0:
+                    out.pop()
+                out.append([[""], [""]])
+                write_to = 0
+                continue
+            if x[0] == "QUOTA":
+                if skipped:
+                    skipped = False
+                    continue
+                if variable:
+                    variable = False
+                    out[-1][write_to][-1] += variable_data
+                put = False
+                if quotes:
+                    if double:
+                        put = True
+                        continue
+                    quotes = False
+                    continue
+                quotes = True
+                continue
+            if x[0] == "DOUBLE_QUOTA":
+                if skipped:
+                    skipped = False
+                    continue
+                if variable:
+                    variable = False
+                    out[-1][write_to][-1] += variable_data
+                put = False
+                if quotes:
+                    if not double:
+                        put = True
+                        continue
+                    quotes = False
+                    double = False
+                    continue
+                quotes = True
+                double = True
+                continue
+            if x[0] == "COMMENT":
+                if not (skipped or quotes):
+                    if skipped:
+                        skipped = False
+                    nline_ignore = True
+                if variable:
+                    variable = False
+                    out[-1][write_to][-1] += variable_data
+                continue
+            if x[0] == "WHITESPACE":
+                if skipped or quotes:
+                    if skipped:
+                        skipped = False
+                    continue
+                if len(out[-1][write_to][-1]) > 0:
+                    out[-1][write_to].append("")
+                if variable:
+                    variable = False
+                    out[-1][write_to][-1] += variable_data
+                put = False
+                continue
+            if x[0] == "VARIABLE":
+                if quotes and not double:
+                    continue
+                if skipped:
+                    continue
+                put = False
+                if variable:
+                    try:
+                        out[-1][write_to][-1] += variables[variable_data]
+                    except:
+                        printf(f"Unknown variable at {pos}", level='d')
+                    variable = False
+                    variable_data = ""
+                    continue
+                variable = True
                 continue
             if dash:
-                out[-1][write_to].append(["DASH", "-"])
+                if variable:
+                    variable_data += "-"
+                else:
+                    out[-1][write_to][-1] += "-"
                 dash = False
-        return out
+        real_out = []
+        for pos, y in enumerate(out):
+            if not len("".join(y[0]+y[1])) == 0:
+                real_out.append(y)
+        return real_out
 
     @staticmethod
     def lex(data: str) -> list[list[str]]:
