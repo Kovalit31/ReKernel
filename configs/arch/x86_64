@@ -1,4 +1,4 @@
-check_cmd rustup -- not_fatal no_message ignore_3
+check_cmd rustup -- not_fatal no_message ignore 2
 check_cmd wget -- % "Wget not found, abort!"
 run "wget -O- https://sh.rustup.rs | sh -s -- -y --profile minimal" -- % "Rustup can't be intalled"
 

@@ -7,6 +7,7 @@ import random
 import re
 import shutil
 import json
+import subprocess
 from typing import Callable, Iterable
 
 # ==============================================================
@@ -235,6 +236,14 @@ def do_nothing() -> None:
 def pass_result(*args) -> Result:
     return Result(True)
 
+def execute(cmd: str) -> int:
+    """
+    Wrap around os.system()
+    """
+    code = os.system(f"/bin/bash -c '{cmd}'")
+    code = code >> 8
+    return code
+
 # =========================
 #       Config reader
 # =========================
@@ -252,12 +261,31 @@ class ConfigRead():
             "mkdir": self.mkdir,
             "move": self.move,
             "build": self.build,
-            "check_cmd": pass_result,
+            "check_cmd": self.check_cmd,
+            "run": self.run_cmd,
+        }
+        self.variables = {
+            "workdir": definitions["default_path_base"],
+            "filename": os.path.basename(file)
         }
         self.parse()
     
     def build(self, command_pointer: int) -> Result:
         return Result(True)
+
+    def check_cmd(self, command_pointer: int) -> Result:
+        data = self.queue[command_pointer][1]
+        for x in data:
+            if shutil.which(x) is None:
+                return Result(Exception(f"No command {x} found at {command_pointer}"))
+        return Result(True)
+
+    def run_cmd(self, command_pointer: int) -> Result:
+        data = " ".join(self.queue[command_pointer][1])
+        code = execute(data)
+        if code == 0:
+            return Result(True)
+        return Result(Exception(f"Command ended with code {code}!"))
 
     def move(self, command_pointer: int) -> Result:
         data = self.queue[command_pointer][1]
@@ -330,13 +358,14 @@ class ConfigRead():
                             _ = data[mod]
                             data[mod] = True
                         except KeyError:
-                            printf(f"Unknown mod at {m_pos}", level='d')
+                            printf(f"Unknown mod at {m_pos}", level='e')
                 ign_count = int(data["ignore"])
                 ok = result.is_ok()
                 if ok:
                     continue
                 else:
                     error = str(result.data)
+                    ign_count = 0
                     if len(data["error_message"]) > 0:
                         error = data["error_message"]
                     if data["no_message"]:
@@ -369,7 +398,7 @@ class ConfigRead():
     def parse(self) -> None:
         data = "".join(self.file.read())
         tokens = self.lex(data)
-        splitted = self.gen_instructions(tokens)
+        splitted = self.gen_instructions(tokens, variables=self.variables)
         clever_out(splitted)
         out = []
         for command in splitted:
