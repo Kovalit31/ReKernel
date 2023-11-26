@@ -58,7 +58,7 @@ definitions = CallingDict(
             "default_path_global_log": lambda d: os.path.join(d["default_path_global_log_path"], d["default_path_global_log_name"]),
             "default_path_base": os.path.dirname(__file__),
             "global_log": lambda d: LogFile(d["default_path_global_log"]),
-            "debug": True,
+            "debug": False,
             "verbose": False,
             "arch_regex": ["i.86/x86", "x86_64/x86_64", "sun4u/sparc64", "arm.*/arm", "sa110/arm", "s390x/s390", "ppc.*/powerpc", "mips.*/mips", "sh[234].*/sh", "aarch64.*/arm64", "riscv.*/riscv", "loongarch.*/loongarch"],
             "default_path_arch_support": lambda d: os.path.join(d["default_path_base"], "configs", "arch"),
@@ -217,11 +217,11 @@ def printf(*message, level="i", global_log: LogFile=definitions["global_log"]):
             exit(2)
         printf(string, level='f')
 
-def strip_clean(data: list[str]) -> list[str]:
+def strip_clean(data: list) -> list:
     to_pop = []
     out = data
     for pos, x in enumerate(data):
-        if len(x.strip()) == 0:
+        if len(x.strip() if isinstance(x, str) else x) == 0:
             to_pop.append(pos - len(to_pop))
     for y in to_pop:
         out.pop(y)
@@ -270,26 +270,24 @@ class ConfigRead():
         }
         self.parse()
     
-    def build(self, command_pointer: int) -> Result:
+    def build(self, command_data: list[str]) -> Result:
         return Result(True)
 
-    def check_cmd(self, command_pointer: int) -> Result:
-        data = self.queue[command_pointer][1]
-        for x in data:
+    def check_cmd(self, command_data: list[str]) -> Result:
+        for x in command_data:
             if shutil.which(x) is None:
-                return Result(Exception(f"No command {x} found at {command_pointer}"))
+                return Result(Exception(f"No command {x} found "))
         return Result(True)
 
-    def run_cmd(self, command_pointer: int) -> Result:
-        data = " ".join(self.queue[command_pointer][1])
+    def run_cmd(self, command_data: list[str]) -> Result:
+        data = " ".join(command_data)
         code = execute(data)
         if code == 0:
             return Result(True)
         return Result(Exception(f"Command ended with code {code}!"))
 
-    def move(self, command_pointer: int) -> Result:
-        data = self.queue[command_pointer][1]
-        destination, sources = data[-1], data[:-1]
+    def move(self, command_data: list[str]) -> Result:
+        destination, sources = command_data[-1], command_data[:-1]
         self._fs_io_check(sources, destination).unwrap()
         for x in sources:
             try:
@@ -298,23 +296,20 @@ class ConfigRead():
                 return Result(e)
         return Result(True)
 
-    def mkdir(self, command_pointer: int) -> Result:
-        data = self.queue[command_pointer][1]
-        for x in data:
+    def mkdir(self, command_data: list[str]) -> Result:
+        for x in command_data:
             try:
                 os.makedirs(x, exist_ok=True)
             except Exception as e:
                 return Result(e)
         return Result(True)
 
-    def echo(self, command_pointer: int) -> Result:
-        data = self.queue[command_pointer][1]
-        print(" ".join(data))
+    def echo(self, command_data: list[str]) -> Result:
+        print(" ".join(command_data))
         return Result(True)
 
-    def copy(self, command_pointer: int) -> Result:
-        data = self.queue[command_pointer][1]
-        destination, sources = data[-1], data[:-1]
+    def copy(self, command_data: list[str]) -> Result:
+        destination, sources = command_data[-1], command_data[:-1]
         self._fs_io_check(sources, destination).unwrap()
         for x in sources:
             try:    
@@ -323,6 +318,7 @@ class ConfigRead():
                 return Result(e)
         return Result(True)
     
+    # TODO Split run to 2 parts
     def run(self) -> None:
         if len(self.queue) < 1:
             return # Do nothing
@@ -331,6 +327,7 @@ class ConfigRead():
             if ign_count > 0:
                 ign_count -= 1
                 continue
+            command_p = self.gen_command_data(x)
             data = {
                 "not_fatal": False,
                 "no_message": False,
@@ -340,8 +337,8 @@ class ConfigRead():
             try:
                 wait_next = False
                 section = ""
-                result = self.command_registry[x[0]](pos)
-                mods = x[2]
+                result = self.command_registry[command_p[0][0]](command_p[0][1:])
+                mods = command_p[1]
                 printf(f"Mods: {mods}")
                 printf(f"Result Ok: {result.is_ok()}")
                 for m_pos, mod in enumerate(mods):
@@ -398,16 +395,40 @@ class ConfigRead():
     def parse(self) -> None:
         data = "".join(self.file.read())
         tokens = self.lex(data)
-        splitted = self.gen_instructions(tokens, variables=self.variables)
-        clever_out(splitted)
-        out = []
-        for command in splitted:
-            out.append([command[0][0], command[0][1:],command[1]])
-        self.queue = out
+        pregenerated = self.pregen(tokens)
+        clever_out(pregenerated)
+        self.queue = pregenerated
+    
+    def gen_command_data(self, command_pregen: list[list[list[str]]]) -> list[list[str]]:
+        out = [[""], [""]]
+        for p_pos, part in enumerate(command_pregen):
+            for s_pos, string in enumerate(part):
+                if len(out[p_pos][-1]) != 0:
+                    out[p_pos].append("")
+                variable = False
+                variable_data = ""
+                for t_pos, token in enumerate(string):
+                    if token[0] == "VARIABLE":
+                        if variable:
+                            try:
+                                out[p_pos][-1] += self.variables[variable_data]
+                            except KeyError:
+                                printf(f"Unknown variable {variable_data}", level='e')
+                            variable = False
+                            variable_data = ""
+                            continue
+                        variable = True
+                        continue
+                    if variable:
+                        variable_data += token[1]
+                        continue
+                    out[p_pos][-1] += token[1]
+            out[p_pos] = strip_clean(out[p_pos])
+        return out
 
     @staticmethod
-    def gen_instructions(tokens: list[list[str]], variables: dict = {}) -> list[list[list[str]]]:
-        out = [[[""], [""]]]
+    def pregen(tokens: list[list[str]]) -> list[list[list[list[str]]]]:
+        out = [[[[]], [[]]]]
         write_to = 0
         dash = False
         skipped = False
@@ -416,16 +437,16 @@ class ConfigRead():
         double = False
         nline_ignore = False
         variable = False
-        variable_data = ""
+        variable_data = []
         for pos, x in enumerate(tokens):
             if nline_ignore:
                 put = False
             if not pos == 0:
                 if put:
                     if not variable:
-                        out[-1][write_to][-1] += tokens[pos-1][1]
+                        out[-1][write_to][-1].append(tokens[pos-1])
                     else:
-                        variable_data += tokens[pos-1][1]
+                        variable_data.append(tokens[pos-1])
                 put = True
             if x[0] == "DASH":
                 if skipped:
@@ -456,7 +477,9 @@ class ConfigRead():
                 put = False
                 if variable:
                     variable = False
+                    variable_data[0] = ["IGNORED_VARIABLE", "?"]
                     out[-1][write_to][-1] += variable_data
+                    variable_data = []
                 if nline_ignore:
                     nline_ignore = False
                     continue
@@ -465,7 +488,7 @@ class ConfigRead():
                 out[-1][1] = strip_clean(out[-1][1])
                 if len(out[-1][0]+out[-1][1]) == 0:
                     out.pop()
-                out.append([[""], [""]])
+                out.append([[[]], [[]]])
                 write_to = 0
                 continue
             if x[0] == "QUOTA":
@@ -474,7 +497,9 @@ class ConfigRead():
                     continue
                 if variable:
                     variable = False
+                    variable_data[0] = ["IGNORED_VARIABLE", "?"]
                     out[-1][write_to][-1] += variable_data
+                    variable_data = []
                 put = False
                 if quotes:
                     if double:
@@ -490,7 +515,9 @@ class ConfigRead():
                     continue
                 if variable:
                     variable = False
+                    variable_data[0] = ["IGNORED_VARIABLE", "?"]
                     out[-1][write_to][-1] += variable_data
+                    variable_data = []
                 put = False
                 if quotes:
                     if not double:
@@ -509,7 +536,9 @@ class ConfigRead():
                     nline_ignore = True
                 if variable:
                     variable = False
+                    variable_data[0] = ["IGNORED_VARIABLE", "?"]
                     out[-1][write_to][-1] += variable_data
+                    variable_data = []
                 continue
             if x[0] == "WHITESPACE":
                 if skipped or quotes:
@@ -517,10 +546,12 @@ class ConfigRead():
                         skipped = False
                     continue
                 if len(out[-1][write_to][-1]) > 0:
-                    out[-1][write_to].append("")
+                    out[-1][write_to].append([])
                 if variable:
                     variable = False
+                    variable_data[0] = ["IGNORED_VARIABLE", "?"]
                     out[-1][write_to][-1] += variable_data
+                    variable_data = []
                 put = False
                 continue
             if x[0] == "VARIABLE":
@@ -530,26 +561,32 @@ class ConfigRead():
                     continue
                 put = False
                 if variable:
-                    try:
-                        out[-1][write_to][-1] += variables[variable_data]
-                    except:
-                        printf(f"Unknown variable at {pos}", level='d')
+                    variable_data.append(["VARIABLE", "?"])
+                    out[-1][write_to][-1] += variable_data
                     variable = False
-                    variable_data = ""
+                    variable_data = []
                     continue
+                variable_data.append(["VARIABLE", "?"])
                 variable = True
+                continue
+            if x[0] == "PUNCTUATION":
+                if variable:
+                    variable = False
+                    variable_data[0] = ["IGNORED_VARIABLE", "?"]
+                    out[-1][write_to][-1] += variable_data
+                    variable_data = []
                 continue
             if dash:
                 if variable:
-                    variable_data += "-"
+                    variable_data.append(["PUNCTUATION", "-"])
                 else:
-                    out[-1][write_to][-1] += "-"
+                    out[-1][write_to][-1].append(["PUNCTUATION", "-"])
                 dash = False
         real_out = []
         for pos, y in enumerate(out):
-            if not len("".join(y[0]+y[1])) == 0:
+            if not len(strip_clean(y[0])) + len(strip_clean(y[1])) == 0:
                 real_out.append(y)
-        return real_out
+        return out
 
     @staticmethod
     def lex(data: str) -> list[list[str]]:
@@ -594,6 +631,7 @@ def argparse():
 def main(args: list = []) -> None:
     if not get_arch() in definitions["arch_support"]:
         printf("Arch not supported yet!", level="f")
+#    definitions["debug"] = True
     arch = ConfigRead(os.path.join(definitions["default_path_arch_support"], get_arch()))
     arch.run()
 
