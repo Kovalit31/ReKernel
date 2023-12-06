@@ -78,12 +78,15 @@ class Err(Exception):
     pass
 
 class Result():
+    err_msg = None
+    
     def __init__(self, data) -> None:
         self.result = True
         if isinstance(data, Iterable):
             self.data = (data)
         elif isinstance(data, Exception):
             self.data = Err(str(data))
+            self.err_msg = str(data)
             self.result = False
         else:
             self.data = ([data])
@@ -263,6 +266,7 @@ class ConfigRead():
             "build": self.build,
             "check_cmd": self.check_cmd,
             "run": self.run_cmd,
+            "chmod_exec": self.chmod_exec,
         }
         self.variables = {
             "workdir": definitions["default_path_base"],
@@ -270,12 +274,20 @@ class ConfigRead():
         }
         self.parse()
     
+    def chmod_exec(self, command_data: list[str]) -> Result:
+        try:
+            os.chmod(command_data[-1], 0o755)
+            return Result(True)
+        except:
+            return Result(Exception("Can't chmod executable"))
+
     def build(self, command_data: list[str]) -> Result:
         return Result(True)
 
     def check_cmd(self, command_data: list[str]) -> Result:
         for x in command_data:
-            if shutil.which(x) is None:
+            result = self.run_cmd([f"command -v {x}>/dev/null"])
+            if result.is_err():
                 return Result(Exception(f"No command {x} found "))
         return Result(True)
 
@@ -317,62 +329,70 @@ class ConfigRead():
             except Exception as e:
                 return Result(e)
         return Result(True)
-    
-    # TODO Split run to 2 parts
-    def run(self) -> None:
-        if len(self.queue) < 1:
-            return # Do nothing
+
+    def run(self, _cmd_list: list[list[list[list[str]]]] = None) -> Result:
+        result = Result(True)
+        queue = self.queue if _cmd_list is None else _cmd_list
+        if len(queue) < 1:
+            return result # Do nothing
         ign_count = 0 # It ignores upcoming commands
-        for pos, x in enumerate(self.queue):
+        for _, x in enumerate(queue):
             if ign_count > 0:
                 ign_count -= 1
                 continue
             command_p = self.gen_command_data(x)
-            data = {
-                "not_fatal": False,
-                "no_message": False,
-                "ignore": 0,
-                "error_message": ""
-            }
-            try:
-                wait_next = False
-                section = ""
-                result = self.command_registry[command_p[0][0]](command_p[0][1:])
-                mods = command_p[1]
-                printf(f"Mods: {mods}")
-                printf(f"Result Ok: {result.is_ok()}")
-                for m_pos, mod in enumerate(mods):
-                    if mod == "ignore":
-                        wait_next = True
-                        section = mod
-                    elif mod == "%":
-                        wait_next = True
-                        section = "error_message"
-                    elif wait_next:
-                        data[section] = mod
-                    else:
-                        try:
-                            _ = data[mod]
-                            data[mod] = True
-                        except KeyError:
-                            printf(f"Unknown mod at {m_pos}", level='e')
-                ign_count = int(data["ignore"])
-                ok = result.is_ok()
-                if ok:
-                    continue
+            ign_count, result = self._real_run(command_p)
+        return result
+    
+    def _real_run(self, command_p: list) -> tuple[int, Result]:
+        ign_count = 0
+        result = Result(Exception("Can't run: unknown error"))
+        data = {
+            "not_fatal": False,
+            "no_message": False,
+            "ignore": 0,
+            "error_message": ""
+        }
+        try:
+            wait_next = False
+            section = ""
+            result = self.command_registry[command_p[0][0]](command_p[0][1:])
+            mods = command_p[1]
+            printf(f"Mods: {mods}")
+            printf(f"Result Ok: {result.is_ok()}")
+            for m_pos, mod in enumerate(mods):
+                if mod == "ignore":
+                    wait_next = True
+                    section = mod
+                elif mod == "%":
+                    wait_next = True
+                    section = "error_message"
+                elif wait_next:
+                    data[section] = mod
                 else:
-                    error = str(result.data)
-                    ign_count = 0
-                    if len(data["error_message"]) > 0:
-                        error = data["error_message"]
-                    if data["no_message"]:
-                        error = None
-                    if data["not_fatal"]:
-                        continue
-                    if error is not None:
-                        printf(error, level='f')
-            except KeyError:
-                printf(f"Unresolved command: {x[0]}", level="e")
+                    try:
+                        _ = data[mod]
+                        data[mod] = True
+                    except KeyError:
+                        printf(f"Unknown mod at {m_pos}", level='e')
+            ign_count = int(data["ignore"])
+            ok = result.is_ok()
+            if ok:
+                return ign_count, result
+            else:
+                error = str(result.data)
+                ign_count = 0
+                if len(data["error_message"]) > 0:
+                    error = data["error_message"]
+                if data["no_message"]:
+                    error = None
+                if data["not_fatal"]:
+                    return ign_count, result
+                if error is not None:
+                    printf(error, level='f')
+        except KeyError:
+            printf(f"Unresolved command: {' '.join(command_p[0])}", level="e")
+        return ign_count, result
     
     @staticmethod
     def _fs_io_check(src: list[str], dst: str) -> Result:
@@ -410,10 +430,16 @@ class ConfigRead():
                 for t_pos, token in enumerate(string):
                     if token[0] == "VARIABLE":
                         if variable:
-                            try:
-                                out[p_pos][-1] += self.variables[variable_data]
-                            except KeyError:
-                                printf(f"Unknown variable {variable_data}", level='e')
+                            if variable_data.startswith("(") and variable_data.endswith(")"):
+                                variable_data.strip("()")
+                                _cmd_list = self.pregen(self.lex(variable_data))
+                                result = self.run(_cmd_list=_cmd_list)
+                                out[p_pos][-1] += str(result.unwrap() if isinstance(result.unwrap(), str) else " ".join(result.unwrap())) if result.is_ok() else str(result.err_msg)
+                            else:
+                                try:
+                                    out[p_pos][-1] += self.variables[variable_data]
+                                except KeyError:
+                                    printf(f"Unknown variable {variable_data}", level='e')
                             variable = False
                             variable_data = ""
                             continue
