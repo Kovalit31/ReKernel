@@ -7,7 +7,8 @@ import random
 import re
 import shutil
 import json
-import subprocess
+#import subprocess
+import argparse
 from typing import Callable, Iterable
 
 # ==============================================================
@@ -82,14 +83,12 @@ class Result():
     
     def __init__(self, data) -> None:
         self.result = True
-        if isinstance(data, Iterable):
-            self.data = (data)
-        elif isinstance(data, Exception):
+        if isinstance(data, Exception):
             self.data = Err(str(data))
             self.err_msg = str(data)
             self.result = False
         else:
-            self.data = ([data])
+            self.data = (data, None)
 
     def is_ok(self) -> bool:
         return self.result
@@ -218,7 +217,7 @@ def printf(*message, level="i", global_log: LogFile=definitions["global_log"]):
     if _level == 'f':
         if not definitions["verbose"]:
             exit(2)
-        printf(string, level='f')
+        raise Exception(msg)
 
 def strip_clean(data: list) -> list:
     to_pop = []
@@ -236,7 +235,7 @@ def do_nothing() -> None:
     '''
     pass
 
-def pass_result(*args) -> Result:
+def pass_result(*_) -> Result:
     return Result(True)
 
 def execute(cmd: str) -> int:
@@ -281,7 +280,7 @@ class ConfigRead():
         except:
             return Result(Exception("Can't chmod executable"))
 
-    def build(self, command_data: list[str]) -> Result:
+    def build(self, _: list[str]) -> Result:
         return Result(True)
 
     def check_cmd(self, command_data: list[str]) -> Result:
@@ -333,6 +332,7 @@ class ConfigRead():
     def run(self, _cmd_list: list[list[list[list[str]]]] = None) -> Result:
         result = Result(True)
         queue = self.queue if _cmd_list is None else _cmd_list
+        printf(f"Current queue: {queue}", level='d')
         if len(queue) < 1:
             return result # Do nothing
         ign_count = 0 # It ignores upcoming commands
@@ -358,8 +358,8 @@ class ConfigRead():
             section = ""
             result = self.command_registry[command_p[0][0]](command_p[0][1:])
             mods = command_p[1]
-            printf(f"Mods: {mods}")
-            printf(f"Result Ok: {result.is_ok()}")
+            printf(f"Mods: {mods}", level='d')
+            printf(f"Result Ok: {result.is_ok()}", level='d')
             for m_pos, mod in enumerate(mods):
                 if mod == "ignore":
                     wait_next = True
@@ -416,25 +416,25 @@ class ConfigRead():
         data = "".join(self.file.read())
         tokens = self.lex(data)
         pregenerated = self.pregen(tokens)
-        clever_out(pregenerated)
         self.queue = pregenerated
     
     def gen_command_data(self, command_pregen: list[list[list[str]]]) -> list[list[str]]:
         out = [[""], [""]]
         for p_pos, part in enumerate(command_pregen):
-            for s_pos, string in enumerate(part):
+            for _, string in enumerate(part):
                 if len(out[p_pos][-1]) != 0:
                     out[p_pos].append("")
                 variable = False
                 variable_data = ""
-                for t_pos, token in enumerate(string):
+                for _, token in enumerate(string):
                     if token[0] == "VARIABLE":
                         if variable:
                             if variable_data.startswith("(") and variable_data.endswith(")"):
-                                variable_data.strip("()")
+                                variable_data = variable_data.strip("()")
                                 _cmd_list = self.pregen(self.lex(variable_data))
                                 result = self.run(_cmd_list=_cmd_list)
-                                out[p_pos][-1] += str(result.unwrap() if isinstance(result.unwrap(), str) else " ".join(result.unwrap())) if result.is_ok() else str(result.err_msg)
+                                data = result.unwrap() if result.is_ok() else result.err_msg
+                                out[p_pos][-1] += data if isinstance(data, str) else " ".join(data) if isinstance(data, Iterable) else str(data) if isinstance(data, bool) else ""
                             else:
                                 try:
                                     out[p_pos][-1] += self.variables[variable_data]
@@ -464,8 +464,11 @@ class ConfigRead():
         nline_ignore = False
         variable = False
         variable_data = []
+        parentess = 0
+        parentess_ignore = False
+        latest_left = 0
         for pos, x in enumerate(tokens):
-            if nline_ignore:
+            if nline_ignore or parentess_ignore:
                 put = False
             if not pos == 0:
                 if put:
@@ -500,6 +503,8 @@ class ConfigRead():
                 if skipped:
                     skipped = False
                     continue
+                if parentess:
+                    continue
                 put = False
                 if variable:
                     variable = False
@@ -521,17 +526,19 @@ class ConfigRead():
                 if skipped:
                     skipped = False
                     continue
-                if variable:
-                    variable = False
-                    variable_data[0] = ["IGNORED_VARIABLE", "?"]
-                    out[-1][write_to][-1] += variable_data
-                    variable_data = []
                 put = False
                 if quotes:
                     if double:
                         put = True
                         continue
                     quotes = False
+                    if variable:
+                        if parentess:
+                            continue
+                        variable = False
+                        variable_data[0] = ["IGNORED_VARIABLE", "?"]
+                        out[-1][write_to][-1] += variable_data
+                        variable_data = []
                     continue
                 quotes = True
                 continue
@@ -539,11 +546,6 @@ class ConfigRead():
                 if skipped:
                     skipped = False
                     continue
-                if variable:
-                    variable = False
-                    variable_data[0] = ["IGNORED_VARIABLE", "?"]
-                    out[-1][write_to][-1] += variable_data
-                    variable_data = []
                 put = False
                 if quotes:
                     if not double:
@@ -551,6 +553,13 @@ class ConfigRead():
                         continue
                     quotes = False
                     double = False
+                    if variable:
+                        if parentess:
+                            continue
+                        variable = False
+                        variable_data[0] = ["IGNORED_VARIABLE", "?"]
+                        out[-1][write_to][-1] += variable_data
+                        variable_data = []
                     continue
                 quotes = True
                 double = True
@@ -559,8 +568,13 @@ class ConfigRead():
                 if not (skipped or quotes):
                     if skipped:
                         skipped = False
-                    nline_ignore = True
+                    if parentess:
+                        parentess_ignore = True
+                    else:
+                        nline_ignore = True
                 if variable:
+                    if parentess:
+                        continue
                     variable = False
                     variable_data[0] = ["IGNORED_VARIABLE", "?"]
                     out[-1][write_to][-1] += variable_data
@@ -571,14 +585,16 @@ class ConfigRead():
                     if skipped:
                         skipped = False
                     continue
+                put = False
                 if len(out[-1][write_to][-1]) > 0:
                     out[-1][write_to].append([])
                 if variable:
+                    if parentess:
+                        continue
                     variable = False
                     variable_data[0] = ["IGNORED_VARIABLE", "?"]
                     out[-1][write_to][-1] += variable_data
                     variable_data = []
-                put = False
                 continue
             if x[0] == "VARIABLE":
                 if quotes and not double:
@@ -597,10 +613,25 @@ class ConfigRead():
                 continue
             if x[0] == "PUNCTUATION":
                 if variable:
+                    if parentess:
+                        continue
                     variable = False
                     variable_data[0] = ["IGNORED_VARIABLE", "?"]
                     out[-1][write_to][-1] += variable_data
                     variable_data = []
+                continue
+            if x[0] == "PARENTESS_LEFT":
+                latest_left = pos
+                parentess += 1
+                continue
+            if x[0] == "PARENTESS_RIGHT":
+                if parentess_ignore:
+                    parentess_ignore = False
+                    put = True
+                if parentess == 0:
+                    printf(f"Oops! You have unresolved parentess at {pos}", level='e')
+                    continue
+                parentess -= 1
                 continue
             if dash:
                 if variable:
@@ -608,6 +639,8 @@ class ConfigRead():
                 else:
                     out[-1][write_to][-1].append(["PUNCTUATION", "-"])
                 dash = False
+        if parentess > 0:
+            printf("You have unterminated parentess at {latest_left}", level='e')
         real_out = []
         for pos, y in enumerate(out):
             if not len(strip_clean(y[0])) + len(strip_clean(y[1])) == 0:
@@ -650,18 +683,19 @@ class ConfigRead():
 #   Main functionality
 # ======================
 
-def argparse():
-    # TODO Implement arg parser
-    pass
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--debug", help="Switch to debug mode", default=False, action="store_true")
+    parser.add_argument("--verbose", help="Switch to verbose mode", default=False, action="store_true")
+    return parser.parse_args()
 
-def main(args: list = []) -> None:
+def main(args: argparse.Namespace) -> None:
     if not get_arch() in definitions["arch_support"]:
         printf("Arch not supported yet!", level="f")
-#    definitions["debug"] = True
+    definitions["debug"] = args.debug
+    definitions["verbose"] = args.verbose
     arch = ConfigRead(os.path.join(definitions["default_path_arch_support"], get_arch()))
     arch.run()
 
 if __name__ == "__main__":
-    main()
-#arch = ArchSpecific()
-#arch.run()
+    main(parse_args())
