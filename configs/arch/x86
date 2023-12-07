@@ -7,9 +7,9 @@ run "./rustup.sh -y --profile minimal" -- % "Rustup can't be installed"
 
 # Copy content
 
-copy ?workdir?/configs/?filename?/toolchain.toml ?workdir?/rust-toolchain.toml
+cp ?workdir?/configs/?filename?/toolchain.toml ?workdir?/rust-toolchain.toml
 
-move ?workdir?/target/?filename? ?workdir?/arch
+mv ?workdir?/target/?filename? ?workdir?/arch
 
 build ?workdir?/kernel -- % "Can't build kernel!"
 build ?workdir?/arch -- % "Can't build arch!"

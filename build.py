@@ -7,9 +7,12 @@ import random
 import re
 import shutil
 import json
+import sys
 #import subprocess
 import argparse
+import importlib.util
 from typing import Callable, Iterable
+import types
 
 # ==============================================================
 # #1 stackoverflow: https://stackoverflow.com/questions/3738381/what-do-i-do-when-i-need-a-self-referential-dictionary
@@ -63,7 +66,9 @@ definitions = CallingDict(
             "verbose": False,
             "arch_regex": ["i.86/x86", "x86_64/x86_64", "sun4u/sparc64", "arm.*/arm", "sa110/arm", "s390x/s390", "ppc.*/powerpc", "mips.*/mips", "sh[234].*/sh", "aarch64.*/arm64", "riscv.*/riscv", "loongarch.*/loongarch"],
             "default_path_arch_support": lambda d: os.path.join(d["default_path_base"], "configs", "arch"),
-            "arch_support": lambda d: os.listdir(d["default_path_arch_support"])            
+            "default_path_mods": lambda d: os.path.join(d["default_path_base"], "configs", "mods"),
+            "arch_support": lambda d: os.listdir(d["default_path_arch_support"]),
+            "nbconf_mods": lambda d: os.listdir(d["default_path_mods"])
         }
     )
 
@@ -246,6 +251,22 @@ def execute(cmd: str) -> int:
     code = code >> 8
     return code
 
+def import_module(name: str, path: str) -> Result:
+    if name in sys.modules:
+        return Result(sys.modules[name])
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None:
+        return Result(Exception(f"Invalid module {name} spec"))
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return Result(module)
+
+def unimport_module(module: types.ModuleType, name: str) -> None:
+    sys.modules.pop(name)
+    del(module)
+
+
 # =========================
 #       Config reader
 # =========================
@@ -255,83 +276,42 @@ class ConfigRead():
     Setups arch-specific command queue (line, sorry americans)
     '''
     def __init__(self, file: str) -> None:
-        self.file = File(file)
-        self.queue = []
-        self.command_registry = {
-            "copy": self.copy,
-            "echo": self.echo,
-            "mkdir": self.mkdir,
-            "move": self.move,
-            "build": self.build,
-            "check_cmd": self.check_cmd,
-            "run": self.run_cmd,
-            "chmod_exec": self.chmod_exec,
-        }
-        self.variables = {
+        self._file = File(file)
+        self._queue = []
+        self._command_registry = {}
+        self._variables = {
             "workdir": definitions["default_path_base"],
-            "filename": os.path.basename(file)
+            "filename": os.path.basename(file),
+            "SHELL": "nbconf", # New Build CONFig
         }
-        self.parse()
+        self._import()
+        self._parse()
     
-    def chmod_exec(self, command_data: list[str]) -> Result:
-        try:
-            os.chmod(command_data[-1], 0o755)
-            return Result(True)
-        except:
-            return Result(Exception("Can't chmod executable"))
+    def _import(self):
+        modules = definitions["nbconf_mods"]
+        for x in modules:
+            name = os.path.basename(x)
+            if name.startswith("_"):
+                continue
+            path = os.path.join(definitions["default_path_mods"], x)
+            _tmp_m = import_module(name, path).unwrap()
+            functions = dir(_tmp_m)
+            for y in functions:
+                _f = getattr(_tmp_m, y)
+                if not isinstance(_f, Callable):
+                    continue
+                if y.startswith("_"):
+                    continue
+                if y in dir(self):
+                    printf("Error: More than two functions {y}, consider name it other, adding it as {y}_!", level='e')
+                    y = y+"_"
+                setattr(self, y, _f)
+                self._command_registry[y] = getattr(self, y)
+            unimport_module(_tmp_m, name)
 
-    def build(self, _: list[str]) -> Result:
-        return Result(True)
-
-    def check_cmd(self, command_data: list[str]) -> Result:
-        for x in command_data:
-            result = self.run_cmd([f"command -v {x}>/dev/null"])
-            if result.is_err():
-                return Result(Exception(f"No command {x} found "))
-        return Result(True)
-
-    def run_cmd(self, command_data: list[str]) -> Result:
-        data = " ".join(command_data)
-        code = execute(data)
-        if code == 0:
-            return Result(True)
-        return Result(Exception(f"Command ended with code {code}!"))
-
-    def move(self, command_data: list[str]) -> Result:
-        destination, sources = command_data[-1], command_data[:-1]
-        self._fs_io_check(sources, destination).unwrap()
-        for x in sources:
-            try:
-                self._fs_io_real(x, destination, shutil.move, shutil.move)
-            except Exception as e:
-                return Result(e)
-        return Result(True)
-
-    def mkdir(self, command_data: list[str]) -> Result:
-        for x in command_data:
-            try:
-                os.makedirs(x, exist_ok=True)
-            except Exception as e:
-                return Result(e)
-        return Result(True)
-
-    def echo(self, command_data: list[str]) -> Result:
-        print(" ".join(command_data))
-        return Result(True)
-
-    def copy(self, command_data: list[str]) -> Result:
-        destination, sources = command_data[-1], command_data[:-1]
-        self._fs_io_check(sources, destination).unwrap()
-        for x in sources:
-            try:    
-                self._fs_io_real(x, destination, shutil.copytree, shutil.copyfile)
-            except Exception as e:
-                return Result(e)
-        return Result(True)
-
-    def run(self, _cmd_list: list[list[list[list[str]]]] = None) -> Result:
+    def _run(self, _cmd_list: list[list[list[list[str]]]] = None) -> Result:
         result = Result(True)
-        queue = self.queue if _cmd_list is None else _cmd_list
+        queue = self._queue if _cmd_list is None else _cmd_list
         printf(f"Current queue: {queue}", level='d')
         if len(queue) < 1:
             return result # Do nothing
@@ -340,7 +320,7 @@ class ConfigRead():
             if ign_count > 0:
                 ign_count -= 1
                 continue
-            command_p = self.gen_command_data(x)
+            command_p = self._gen_command_data(x)
             ign_count, result = self._real_run(command_p)
         return result
     
@@ -356,7 +336,7 @@ class ConfigRead():
         try:
             wait_next = False
             section = ""
-            result = self.command_registry[command_p[0][0]](command_p[0][1:])
+            result = self._command_registry[command_p[0][0]](self, command_p[0][1:])
             mods = command_p[1]
             printf(f"Mods: {mods}", level='d')
             printf(f"Result Ok: {result.is_ok()}", level='d')
@@ -394,31 +374,14 @@ class ConfigRead():
             printf(f"Unresolved command: {' '.join(command_p[0])}", level="e")
         return ign_count, result
     
-    @staticmethod
-    def _fs_io_check(src: list[str], dst: str) -> Result:
-        if not os.path.isdir(dst) and len(src) > 1:
-            return Result(Exception("Destination is not dir, cannot overwrite files!"))
-        if len(src) < 1:
-            return Result(Exception("Destination is not set!"))
-        return Result(True)
-
-    @staticmethod
-    def _fs_io_real(src: str, dst: str, src_dir_hand: Callable, src_oth_hand: Callable) -> None:
-        if os.path.isdir(dst):
-            dst = os.path.join(dst, os.path.basename(src))
-        if os.path.isdir(src):
-            src_dir_hand(src, dst)
-        else:
-            src_oth_hand(src, dst)
-        return
     
-    def parse(self) -> None:
-        data = "".join(self.file.read())
-        tokens = self.lex(data)
-        pregenerated = self.pregen(tokens)
-        self.queue = pregenerated
+    def _parse(self) -> None:
+        data = "".join(self._file.read())
+        tokens = self._lex(data)
+        pregenerated = self._pregen(tokens)
+        self._queue = pregenerated
     
-    def gen_command_data(self, command_pregen: list[list[list[str]]]) -> list[list[str]]:
+    def _gen_command_data(self, command_pregen: list[list[list[str]]]) -> list[list[str]]:
         out = [[""], [""]]
         for p_pos, part in enumerate(command_pregen):
             for _, string in enumerate(part):
@@ -431,13 +394,13 @@ class ConfigRead():
                         if variable:
                             if variable_data.startswith("(") and variable_data.endswith(")"):
                                 variable_data = variable_data.strip("()")
-                                _cmd_list = self.pregen(self.lex(variable_data))
-                                result = self.run(_cmd_list=_cmd_list)
+                                _cmd_list = self._pregen(self._lex(variable_data))
+                                result = self._run(_cmd_list=_cmd_list)
                                 data = result.unwrap() if result.is_ok() else result.err_msg
                                 out[p_pos][-1] += data if isinstance(data, str) else " ".join(data) if isinstance(data, Iterable) else str(data) if isinstance(data, bool) else ""
                             else:
                                 try:
-                                    out[p_pos][-1] += self.variables[variable_data]
+                                    out[p_pos][-1] += self._variables[variable_data]
                                 except KeyError:
                                     printf(f"Unknown variable {variable_data}", level='e')
                             variable = False
@@ -453,7 +416,7 @@ class ConfigRead():
         return out
 
     @staticmethod
-    def pregen(tokens: list[list[str]]) -> list[list[list[list[str]]]]:
+    def _pregen(tokens: list[list[str]]) -> list[list[list[list[str]]]]:
         out = [[[[]], [[]]]]
         write_to = 0
         dash = False
@@ -648,7 +611,7 @@ class ConfigRead():
         return out
 
     @staticmethod
-    def lex(data: str) -> list[list[str]]:
+    def _lex(data: str) -> list[list[str]]:
         letters = {token: "LETTER" for token in string.ascii_letters}
         numbers = {token: "NUMBER" for token in string.digits}
         punc = {token: "PUNCTUATION" for token in string.punctuation}
@@ -679,6 +642,36 @@ class ConfigRead():
                 printf(f"Unknown symbol '{x}' at {pos}")
         return tokens
 
+class LoadBuildPy():
+    def __init__(self, data_reg: dict) -> None:
+        self.update(data_reg)
+        sys.modules["build_py"] = self
+    
+    def update(self, data_reg: dict) -> None:
+        _keys = [x for x in data_reg.keys()]
+        for x in _keys:
+            setattr(self, x, data_reg[x])
+
+data_reg = {
+        "ConfigRead": ConfigRead,
+        "printf": printf,
+        "do_nothing": do_nothing,
+        "definitions": definitions,
+        "CallingDict": CallingDict,
+        "gen_uuid": gen_uuid,
+        "Err": Err,
+        "Result": Result,
+        "File": File,
+        "LogFile": LogFile,
+        "debug_func": debug_func,
+        "clever_out": clever_out,
+        "check_sys": check_sys,
+        "get_arch": get_arch,
+        "strip_clean": strip_clean,
+        "pass_result": pass_result,
+        "execute": execute,
+}
+
 # ======================
 #   Main functionality
 # ======================
@@ -694,8 +687,9 @@ def main(args: argparse.Namespace) -> None:
         printf("Arch not supported yet!", level="f")
     definitions["debug"] = args.debug
     definitions["verbose"] = args.verbose
+    LoadBuildPy(data_reg)
     arch = ConfigRead(os.path.join(definitions["default_path_arch_support"], get_arch()))
-    arch.run()
+    arch._run()
 
 if __name__ == "__main__":
     main(parse_args())
