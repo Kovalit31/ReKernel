@@ -303,7 +303,7 @@ class ConfigRead():
                 if y.startswith("_"):
                     continue
                 if y in dir(self):
-                    printf("Error: More than two functions {y}, consider name it other, adding it as {y}_!", level='e')
+                    printf(f"Error: More than two functions {y}, consider name it other, adding it as {y}_!", level='e')
                     y = y+"_"
                 setattr(self, y, _f)
                 self._command_registry[y] = getattr(self, y)
