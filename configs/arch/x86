@@ -1,4 +1,4 @@
-check_cmd rustup -- not_fatal no_message ignore 4
+check_cmd rustup -- not_fatal no_message ignore 5
 check_cmd wget -- % "Wget not found, abort!"
 check_cmd ./rustup.sh -- not_fatal no_message ignore 2
 exec "wget -O rustup.sh https://sh.rustup.rs" -- % "Rustup can't be downloaded"
