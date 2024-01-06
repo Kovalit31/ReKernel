@@ -284,8 +284,23 @@ class ConfigRead():
             "filename": os.path.basename(file),
             "SHELL": "nbconf", # New Build CONFig
         }
+        self._mod_pattern = {        
+            "no_panic": False,
+            "no_message": False,
+            "jmp_rel_pos": 0,
+            "jmp_rel_neg": 0,
+            "jmp_rel": 0,
+            "jmp_pos": 0,
+            "jmp_neg": 0,
+            "jmp": 0,
+            "error_message": ""
+        }
+        self._mod_overrides = {
+            "%": "error_message"
+        }
         self._import()
         self._parse()
+        printf(f"{self._mod_overrides}, {self._mod_pattern}", level='d')
     
     def _import(self):
         modules = definitions["nbconf_mods"]
@@ -299,6 +314,20 @@ class ConfigRead():
             for y in functions:
                 _f = getattr(_tmp_m, y)
                 if not isinstance(_f, Callable):
+                    printf(f"{y} not Callable", level='d')
+                    if isinstance(_f, dict):
+                        if y == "_mod_pattern":
+                            if "no_panic" in _f \
+                                or "no_message" in _f \
+                                    or "error_message" in _f:
+                                printf(f"It is dangerous to set dict at {name}, so no perfoming it", level='e')
+                                continue
+                            self._mod_pattern.update(_f)
+                        if y == "_mod_overrides":
+                            if "%" in _f:
+                                printf(f"It is dangerous to set dict at {name}, so no perfoming it", level='e')
+                                continue
+                            self._mod_overrides.update(_f)
                     continue
                 if y.startswith("_"):
                     continue
@@ -315,64 +344,79 @@ class ConfigRead():
         printf(f"Current queue: {queue}", level='d')
         if len(queue) < 1:
             return result # Do nothing
-        ign_count = 0 # It ignores upcoming commands
-        for _, x in enumerate(queue):
-            if ign_count > 0:
-                ign_count -= 1
-                continue
-            command_p = self._gen_command_data(x)
-            ign_count, result = self._real_run(command_p)
+        jump_data = {
+                "jmp_rel_pos": 0,
+                "jmp_rel_neg": 0,
+                "jmp_rel": 0,
+                "jmp": 0,
+                "jmp_pos": 0,
+                "jmp_neg": 0
+            }
+        x = 0
+        while x < len(queue):
+            command_p = self._gen_command_data(queue[x])
+            jump_data, result = self._real_run(command_p)
+            x = self._resolve_jump(x, jump_data, result.is_ok())
         return result
     
-    def _real_run(self, command_p: list) -> tuple[int, Result]:
-        ign_count = 0
+    def _real_run(self, command_p: list) -> tuple[dict[str, int], Result]:
         result = Result(Exception("Can't run: unknown error"))
-        data = {
-            "not_fatal": False,
-            "no_message": False,
-            "ignore": 0,
-            "error_message": ""
-        }
+        data = self._mod_pattern
+        overrides = self._mod_overrides
+        _jump_data = [x if x.startswith("jmp") else None for x in data.keys()]
+        jump_data = {}
+        for x in _jump_data:
+            if x is not None:
+                jump_data[x] = data[x]
         try:
             wait_next = False
-            section = ""
             result = self._command_registry[command_p[0][0]](self, command_p[0][1:])
             mods = command_p[1]
             printf(f"Mods: {mods}", level='d')
             printf(f"Result Ok: {result.is_ok()}", level='d')
             for m_pos, mod in enumerate(mods):
-                if mod == "ignore":
-                    wait_next = True
-                    section = mod
-                elif mod == "%":
-                    wait_next = True
-                    section = "error_message"
-                elif wait_next:
-                    data[section] = mod
-                else:
+                if mod in overrides and not wait_next:
+                    mod = overrides[mod]
+                if wait_next:
                     try:
-                        _ = data[mod]
-                        data[mod] = True
-                    except KeyError:
-                        printf(f"Unknown mod at {m_pos}", level='e')
-            ign_count = int(data["ignore"])
+                        
+                        data[mods[m_pos-1]] = type(data[mods[m_pos-1]])(mod)
+                        wait_next = False
+                    except:
+                        printf(f"Can't set {mod} as type {type(data[mods[m_pos-1]])}", level='d')
+                    continue
+                if not mod in data:
+                    printf(f"Mod not found {mod}!", level='e')
+                    continue
+                if not isinstance(data[mod], bool):
+                    wait_next = True
+                    continue
+                data[mod] = not data[mod]
+            _jump_data = [x if x.startswith("jmp") else None for x in data.keys()]
+            jump_data = {}
+            for x in _jump_data:
+                if x is not None:
+                    jump_data[x] = data[x]
             ok = result.is_ok()
             if ok:
-                return ign_count, result
+                return jump_data, result
             else:
                 error = str(result.data)
-                ign_count = 0
                 if len(data["error_message"]) > 0:
                     error = data["error_message"]
                 if data["no_message"]:
                     error = None
-                if data["not_fatal"]:
-                    return ign_count, result
+                if data["no_panic"]:
+                    return jump_data, result
                 if error is not None:
                     printf(error, level='f')
+                else:
+                    sys.exit()
         except KeyError:
             printf(f"Unresolved command: {' '.join(command_p[0])}", level="e")
-        return ign_count, result
+        except IndexError:
+            printf(f"Can't run command {command_p}", level='e')
+        return jump_data, result
     
     
     def _parse(self) -> None:
@@ -641,6 +685,20 @@ class ConfigRead():
             except KeyError:
                 printf(f"Unknown symbol '{x}' at {pos}")
         return tokens
+
+    @staticmethod
+    def _resolve_jump(cur: int, jmp_data: dict[str, int], is_pos: bool) -> int:
+        _i = cur + 1
+        suf = "pos" if is_pos else "neg"
+        if jmp_data[f"jmp_{suf}"]:
+            _i = jmp_data[f"jmp_{suf}"]
+        elif jmp_data[f"jmp"]:
+            _i = jmp_data[f"jmp"]
+        elif jmp_data[f"jmp_rel_{suf}"]:
+            _i += jmp_data[f"jmp_rel_{suf}"]
+        elif jmp_data[f"jmp_rel"]:
+            _i += jmp_data[f"jmp_rel"]
+        return _i
 
 class LoadBuildPy():
     def __init__(self, data_reg: dict) -> None:

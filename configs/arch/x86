@@ -1,9 +1,9 @@
-check_cmd rustup -- not_fatal no_message ignore 5
+check_cmd rustup -- no_panic no_message jmp_rel_pos 5
 check_cmd wget -- % "Wget not found, abort!"
-check_cmd ./rustup.sh -- not_fatal no_message ignore 2
+check_cmd ./rustup.sh -- no_panic no_message jmp_rel_pos 2
 exec "wget -O rustup.sh https://sh.rustup.rs" -- % "Rustup can't be downloaded"
 chmod_exec rustup.sh
-exec "./rustup.sh -y --profile minimal" -- % "Rustup can't be installed"
+exec "./rustup.sh -y --profile minimal" -- % "Rustup can't be installed" loop_count 3 jmp_rel_pos -2
 
 # Copy content
 
