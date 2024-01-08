@@ -2,21 +2,21 @@
 #![no_std]
 #![feature(lang_items)]
 
-use core::arch::asm;
+pub mod boot_data;
+
 use core::panic::PanicInfo;
+use self::boot_data::boot::cpu_relax;
+use linux_rs::includes::lang::types::ptr_u16;
 
-extern "C" const PROG_END: u32;
+extern "C" {
+    #[no_mangle]
+    static mut PROG_END: ptr_u16;
+}
 
-const HEAP_START: *const char = PROG_END;
-const HEAP_END: *const char = PROG_END; /* No heap */
+static HEAP_START: ptr_u16 = PROG_END;
+static HEAP_END: ptr_u16 = PROG_END; /* No heap */
 
 pub const STACK_SIZE: usize = 1024;
-
-pub fn cpu_relax() -> () {
-    unsafe {
-        asm!("rep; nop")
-    }
-}
 
 fn copy_boot_params() -> () {
     #[repr(C)]

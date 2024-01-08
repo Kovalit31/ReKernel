@@ -1,6 +1,5 @@
 [package]
-
-name = "linux-rs"
+name = "linux_rs"
 version = "0.1.0"
 description = "linux-rs main package"
 
@@ -12,3 +11,13 @@ panic = "abort"
 
 [profile.test]
 panic = "abort"
+
+# [dependencies]
+# I believe that we will need to use it after some time
+# some_lib = { version = "0.1", optional = true }
+#
+# [features]
+# kernel-feats = ["some_lib"]
+#
+# [[bin]]
+# required-features = ["kernel-feats"]
